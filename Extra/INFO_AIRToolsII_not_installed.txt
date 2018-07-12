@@ -1,0 +1,12 @@
+Some examples and methods in IR Tools make use of the algebraic 
+reconstruction methods and tomography operators in a separate package
+called AIR Tools II.  It appears that AIR Tools II is not installed or 
+accessible in your MATLAB search path.
+
+To enable full functionality, you should do the following:
+   1. Read information at https://github.com/jakobsj/AIRToolsII/
+   2. Download the AIR Tools II software from that home page
+   3. Uncompress the archive
+   4. Go to the AIR Tools II folder and execute the command
+         AIRToolsII_setup('permanent')
+   5. Re-run IRtools_setup.m from the directory where it is located
