@@ -151,4 +151,4 @@ end
 % Call to IRcgls with the specified options.
 options = IRset(defaultopt, options);
 options = rmfield(options, 'MaxIter');
-[X, info] = IRcglsPCH(A, b, K, options);
+[X, info] = IRcgls(A, b, K, options);
