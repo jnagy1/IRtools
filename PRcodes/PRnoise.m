@@ -116,7 +116,7 @@ else
 end
 
 NoiseInfo.kind  = kind;
-NoiseInfo.level = NoiseLevel;
+NoiseInfo.NoiseLevel = NoiseLevel;
 NoiseInfo.noise = noise;
 
 % Subfunction ===========================================================
