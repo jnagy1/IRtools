@@ -82,7 +82,7 @@ function [X, info] = IRenrich(A, b, varargin)
 %                  satisfies the stopping criterion.  Fields:
 %                    It      : iteration where stopping criterion is satisfied
 %                    X       : solution satisfying the stopping criterion
-%                    Enrm    : relative error (requires x_true)
+%                    Enrm    : the corresponding relative error (requires x_true)
 %                    Rnrm    : enriched relative residual
 %                    NE_Rnrm : enriched normal equations relative residual
 %                    Xnrm    : solution norm

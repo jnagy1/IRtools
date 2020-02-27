@@ -65,7 +65,7 @@ function [X,info] = IRrrgmres(A,b,varargin)
 %                 satisfies the stopping criterion.  Fields:
 %                   It   : iteration where stopping criterion is satisfied
 %                   X    : solution satisfying the stopping criterion
-%                   Enrm : best relative error (requires x_true)
+%                   Enrm : the corresponding relative error (requires x_true)
 %      BestReg  - struct containing information about the solution that
 %                 minimizes Enrm (requires x_true). Fields:
 %                   It   : iteration where the minimum is attained
@@ -295,7 +295,7 @@ for k=1:MaxIter
             saved_iterations(j+1) = k-1;
         end
         saved_iterations = saved_iterations(1:j+1);
-        if k-1 < StopIt, StopIt = k-1; end
+        % if k-1 < StopIt, StopIt = k-1; end
         if k>1
             Xnrm = Xnrm(1:k-1);
             Rnrm = Rnrm(1:k-1);
@@ -304,11 +304,11 @@ for k=1:MaxIter
         % Stop because the Hessenberg matrix is (numerically) rank def.
         if StopIt == MaxIter
             StopFlag = 'Breakdown of the Arnoldi algorithm';
-            StopReg.regP = RegParamk;
             StopReg.It = k-1;
             StopReg.X = x; 
             if errornorms, StopReg.Enrm = Enrm(k-1); end
         end
+        k = k-1;
         break
     end
     % Update the inverse of T.

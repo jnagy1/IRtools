@@ -62,12 +62,15 @@ function [X,info] = IRnnfcgls(A,b,varargin)
 %                   * Stagnation of the method
 %                   * Reached maximum number of iterations
 %                   * Discrepancy principle satisfied
+%      StopReg  - struct containing information about the solution that
+%                 satisfies the stopping criterion, with the fields:
+%                   It   : iteration where the stopping criterion is satisfied
+%                   X    : the solution satisfying the stopping criterion
+%                   Enrm : the corresponding relative error (requires x_true)
 %      Rnrm     - relative residual norms at each iteration
 %      NE_Rnrm  - normal eqs relative residual norms at each iteration
 %      Xnrm     - solution norms at each iteration
 %      Enrm     - relative error norms (requires x_true) at each iteration
-%      StopReg  - structure with the solution that satisfies the stopping
-%                 criterion, plus additional information related to it
 %      Xout     - approximate solutions at the beginning of each inner
 %                 cycle (stored column-wise)
 %      itsInOut - 3-column matrix, where the columns store

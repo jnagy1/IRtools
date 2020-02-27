@@ -36,7 +36,7 @@ function [X, info] = IRhybrid_gmres(A, b, varargin)
 %                   [ array | {'none'} ]
 %      RegParam   - a value or a method to find the regularization
 %                   parameter for the projected problems: 
-%                   [non-negative scalar | {'gcv'} | 'modgcv' | 'discrep' ]
+%                   [non-negative scalar | {'gcv'} | 'modgcv' | 'discrep' | 'discrepit']
 %                   This also determines which stopping rule is used
 %                   If 'gcv' or 'modgcv' is chosen, the iteration is stopped
 %                     when the GCV function minimum stabilizes or increases 
@@ -87,6 +87,17 @@ function [X, info] = IRhybrid_gmres(A, b, varargin)
 %                    * Minimum of GCV function (within window of MinTol its)
 %                    * Performed max number of iterations
 %                    * Discrepancy principle satisfied
+%      StopReg  - structure with the following fields:
+%                   * X: solution satisfying the stopping criterion
+%                   * It: iteration satisfying the stopping criterion
+%                   * RegP: regularization parameter at the iteration satisfying 
+%                     the stopping crierion
+%                   * Xnrm: norm of the solution satisfying satisfying the
+%                     stopping criterion 
+%                   * Rnrm: relative residual norm at the iteration
+%                     satisfying the stopping criterion
+%                   * Enrm: relative error norm at the iteration
+%                     satisfying the stopping criterion (requires x_true)
 %      ktotcount - counter of the total iterations (only if restarts
 %                  are used)
 %      Rnrm      - relative residual norms at each iteration
@@ -112,7 +123,7 @@ function [X, info] = IRhybrid_gmres(A, b, varargin)
 % Set default values for options.
 defaultopt = struct('RegParam', 'gcv', 'x0', 'none', 'x_true', 'none', ...
     'MaxIter', 100 , 'IterBar', 'on', 'RegMatrix', 'Identity', ...
-    'stopGCV', 'GCVvalues', 'resflatTol', 0.05, 'GCVflatTol', 10^-6, ...
+    'stopGCV', 'GCVvalues', 'resflatTol', 0.05, 'GCVflatTol', 10^-6, 'discrflatTol', 0.9,...
     'GCVminTol', 3, 'NoStop', 'off', 'NoiseLevel', 'none', 'eta', 1.01, ...
     'RegParam0', 1, 'DecompOut', 'off');
 
@@ -171,6 +182,7 @@ resdegflat = IRget(options, 'resflatTol',[],'fast');
 degflat    = IRget(options, 'GCVflatTol',[],'fast');
 mintol     = IRget(options, 'GCVminTol', [],'fast');
 NoiseLevel = IRget(options, 'NoiseLevel',[], 'fast');
+discrflat  = IRget(options, 'discrflatTol', [], 'fast');
 eta        = IRget(options, 'eta',       [], 'fast');
 RegParamk  = IRget(options, 'RegParam0', [], 'fast');
 restart    = IRget(options, 'restart',   [],'fast');
@@ -192,7 +204,7 @@ if K(end) ~= MaxIter
     MaxIter = K(end);    
 end
 
-if strcmp(RegParam,'discrep') && ischar(NoiseLevel)
+if (strcmp(RegParam,'discrep') || strcmp(RegParam,'discrepit')) && ischar(NoiseLevel)
     error('The noise level must be assigned')
 end
 
@@ -245,9 +257,14 @@ NoStop = strcmp(NoStop,'on');
 
 % Assessing if we want inner Tikhonov regularization.
 if strcmp(RegParam,'off')
-    tik = false;
-else
-    tik = true;
+    RegParam = 0;
+end
+if isscalar(RegParam)
+    if isempty(NoiseLevel) || strcmp(NoiseLevel,'none')
+        NoiseLevel = 0;
+    else
+        NoiseLevel = eta*NoiseLevel;
+    end
 end
 
 % Assessing if we want preconditioning.
@@ -399,15 +416,25 @@ for k=1:MaxIter
         else
             gammak = sqrt(diag(Ck'*Ck)./diag(Sk'*Sk));
         end
+    else
+        LRksq = eye(k);
     end
     
-    if tik
+    %if tik
         if isscalar(RegParam)
             RegParamk = RegParam;
             RegParamVect(k) = RegParamk;
-        elseif strcmp(RegParam,'discrep')
+        elseif strcmp(RegParam,'discrep') 
             if k==1 
                 RegParamVect(k) = RegParamk;
+            end
+         elseif strcmp(RegParam, 'discrepit')
+            if gmres_res > eta*NoiseLevel
+                RegParamk = 0;
+                RegParamVect(k) = RegParamk; 
+            else
+                RegParamk = fzero(@(l)discrfcn(l, Hk, LRksq, rhsk, eta*NoiseLevel), [0, 1e10]);
+                RegParamVect(k) = RegParamk; 
             end
         elseif strcmp(RegParam,'gcv')
             if ~Lproject
@@ -555,6 +582,47 @@ for k=1:MaxIter
                 RegParamk = abs((eta*NoiseLevel - gmres_res)/(Rnrm(k) - gmres_res))*(RegParamk^2);
                 RegParamk = sqrt(RegParamk);
                 if k~=MaxIter, RegParamVect(k+1) = RegParamk; end
+            end
+        elseif strcmp(RegParam,'discrepit')
+            if k>2
+                % stopping criterion
+                if StopIt == MaxIter % the method has not stopped, yet
+                    if abs(RegParamVect(k)-RegParamVect(k-1))/RegParamVect(k-1) < discrflat && abs(RegParamVect(k-1)-RegParamVect(k-2))/RegParamVect(k-2)<discrflat
+                        if verbose
+                            disp('The stopping criterion for the discrepancy principle is satisfied')
+                        end
+                        StopFlag = 'discrepancy principle (stopping criterion) satisfied';
+                        if ~AlreadySaved && ~NoStop
+                            j = j+1;
+                            X(:,j) = x;
+                            if restart
+                                saved_iterations(j) = ktotcount;
+                            else
+                                saved_iterations(j) = k;
+                            end
+                            AlreadySaved = 1;
+                        end
+                        StopIt = k;
+                        StopReg.X = x;
+                        StopReg.It = k;
+                        StopReg.RegP = RegParamk;
+                        StopReg.Xnrm = Xnrm(k);
+                        StopReg.Rnrm = Rnrm(k);
+                        if errornorms, StopReg.Enrm = Enrm(k); end
+                        if ~ NoStop
+                            Xnrm    = Xnrm(1:k);
+                            Rnrm    = Rnrm(1:k);
+                            RegParamVect    = RegParamVect(1:k);
+                            H = H(1:k+1,1:k);
+                            V = V(:,1:k+1);
+                            if errornorms, Enrm = Enrm(1:k); end
+                            X = X(:,1:j);
+                            saved_iterations = saved_iterations(1:j);
+                            % stop because the discrepancy principle is satisfied
+                            break
+                        end
+                    end
+                end
             end
         elseif strcmp(RegParam,'gcv')
             if k > 1
@@ -721,8 +789,85 @@ for k=1:MaxIter
                 end
             end
             end
+    elseif isscalar(RegParam)
+        % Purely iterative method case.
+        if strcmp(NoiseLevel, 'none')
+            if k>1
+            if abs((Rnrm(k)-Rnrm(k-1)))/Rnrm(k-1) < resdegflat && ...
+                Rnrm(k) == min(Rnrm(1:k)) && StopIt == MaxIter
+                if verbose
+                    disp('The stopping criterion for fgmres is satisfied')
+                end
+                % Stop because the residual stabilizes.
+                StopFlag = 'The residual norm stabilizes';
+                if ~AlreadySaved && ~NoStop
+                    j = j+1;
+                    X(:,j) = x;
+                    if restart
+                        saved_iterations(j) = ktotcount;
+                    else
+                        saved_iterations(j) = k;
+                    end
+                    AlreadySaved = 1;
+                end
+                StopIt = k;
+                StopReg.RegP = RegParamk;
+                StopReg.It = k;
+                StopReg.X = x;
+                if errornorms, StopReg.Enrm = Enrm(k); end
+                if ~ NoStop
+                    Xnrm    = Xnrm(1:k);
+                    Rnrm    = Rnrm(1:k);
+                    RegParamVect = RegParamVect(1:k);
+                    H = H(1:k+1,1:k);
+                    V = V(:,1:k+1);
+                    if errornorms, Enrm = Enrm(1:k); end
+                    X = X(:,1:j);
+                    saved_iterations = saved_iterations(1:j);
+                    break
+                end
+            end
+            end
+        else
+            if Rnrm(k) < eta*NoiseLevel
+            % Stopping criterion.
+            if StopIt == MaxIter
+                if verbose
+                    disp('The discrepancy principle is satisfied')
+                end
+                StopFlag = 'The discrepancy principle satisfied';
+                if ~AlreadySaved && ~NoStop
+                    j = j+1;
+                    X(:,j) = x;
+                    if restart
+                        saved_iterations(j) = ktotcount;
+                    else
+                        saved_iterations(j) = k;
+                    end
+                    AlreadySaved = 1;
+                end
+                StopIt = k;
+                StopReg.RegP = RegParamk;
+                StopReg.It = k;
+                StopReg.X = x;
+                if errornorms, StopReg.Enrm = Enrm(k); end
+                if ~ NoStop
+                    Xnrm    = Xnrm(1:k);
+                    Rnrm    = Rnrm(1:k);
+                    RegParamVect    = RegParamVect(1:k);
+                    H = H(1:k+1,1:k);
+                    V = V(:,1:k+1);
+                    if errornorms, Enrm = Enrm(1:k); end
+                    X = X(:,1:j);
+                    saved_iterations = saved_iterations(1:j);
+                    % Stop because the discrepancy principle is satisfied.
+                    break
+                end
+            end
+            end
         end
-    end
+        end
+    % end
 end
 if k == MaxIter 
     if StopIt == MaxIter

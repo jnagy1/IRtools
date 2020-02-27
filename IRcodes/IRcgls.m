@@ -73,7 +73,7 @@ function [X,info] = IRcgls(A,b,varargin)
 %                 satisfies the stopping criterion, with the fields:
 %                   It   : iteration where the stopping criterion is satisfied
 %                   X    : the solution satisfying the stopping criterion
-%                   Enrm : the best relative error (requires x_true)
+%                   Enrm : the corresponding relative error (requires x_true)
 %      Rnrm     - relative residual norms at each iteration
 %      NE_Rnrm  - normal eqs relative residual norms
 %      Xnrm     - solution norms at each iteration
@@ -411,7 +411,8 @@ for k=1:MaxIter
         for i=1:k, q = q - (Q(:,i)'*q)*Q(:,i); end
         Q(:,k+1) = q/norm(q);
     end
-    normr2_new = norm(s)^2;
+    % normr2_new = norm(s)^2; %%% there was a bug!!!
+    normr2_new = norm(q)^2;
     if precond
         s = P_solve(L, q);
     else

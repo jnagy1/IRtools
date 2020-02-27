@@ -82,7 +82,7 @@ function [X, info] = IRrestart(A, b, varargin)
 %             adaptConstr - approximate constraint or regularization
 %                           to be incorporated
 %                           [ {'tv'} | 'nn' | 'tvnn' | 'sp' | 'spnn' |
-%                             'box' | 'energy' | 'project' ]
+%                             'box' | 'energy' | 'project' | 'none']
 %               'box' requires upper and lower scalar bounds 'xMin' and 'xMax'
 %               'energy' requires the positive scalar 'xEnergy'
 %               'project' requires 'xMin', 'xMax' and 'xEnergy'
@@ -100,6 +100,9 @@ function [X, info] = IRrestart(A, b, varargin)
 %             NoStopOut - specifies whether the outer iterations should
 %                         proceed after a stopping criterion has been satisfied
 %                         [ 'on' | {'off'} ]
+%             warmrestart - specifies wether an available approximation of
+%                           the solution should be used as an initial guess.
+%                           [ 'on' | {'off'} ]
 %             verbosity - switch on or off the "verbosity" of the function
 %                       [ {'on'} | 'off' ]
 % Note: the options structure can be created using the function 'IRset'.
@@ -127,7 +130,7 @@ function [X, info] = IRrestart(A, b, varargin)
 %                    satisfies the stopping criterion.  Fields:
 %                      It : iteration where stopping criterion is satisfied
 %                      X : solution satisfying the stopping criterion
-%                      Enrm : best relative error (requires x_true)
+%                      Enrm : the corresponding relative error (requires x_true)
 %          BestReg - struct containing information about the solution that
 %                    minimizes Enrm (requires x_true). Fields:
 %                      It : iteration where the minimum is attained
@@ -158,7 +161,8 @@ defaultopt = struct('x0', 'none', 'MaxIterIn', 30 , 'MaxIterOut', 20 , ...
     'x_true', 'none', 'IterBar', 'on', 'NoStop', 'off', 'NoStopIn', 'off', ...
     'NoStopOut', 'off', 'stopOut', 'xstab', 'stabOut', 1e-6, 'thr0', 1e-10, ...
     'NoiseLevel', 'none', 'eta', 1.01, 'RegParam0', 1,...
-    'inSolver', 'gmres', 'adaptConstr', 'tv', 'verbosity', 'off');
+    'inSolver', 'gmres', 'adaptConstr', 'tv', 'verbosity', 'off',...
+    'SparsityTrans', 'none', 'wname', 'db1', 'wlevels', 2, 'warmrestart', 'on');
   
 % If input is 'defaults,' return the default options in X.
 if nargin==1 && nargout <= 1 && isequal(A,'defaults')
@@ -210,6 +214,8 @@ stabOut    = IRget(options, 'stabOut',    [], 'fast');
 inSolver   = IRget(options, 'inSolver',   [], 'fast');
 adaptConstr= IRget(options, 'adaptConstr',[], 'fast');
 verbose    = IRget(options, 'verbosity',  [], 'fast');
+warmrestart= IRget(options, 'warmrestart',[], 'fast');
+SparsTrans = IRget(options, 'SparsityTrans', [], 'fast');
 
 hybrid = (strcmp(inSolver, 'gmres') || strcmp(inSolver, 'fgmres') || strcmp(inSolver, 'lsqr'))...
     && (strcmp(adaptConstr, 'nn'));
@@ -325,9 +331,14 @@ if strcmp(inSolver, 'fgmres')...
     error('Approximation of the tv regularization term is not possible when the inner solver is fgmres')
 end
 
-if (strcmp(inSolver, 'cgls')||strcmp(inSolver, 'rrgmres')) &&...
+if (strcmp(inSolver, 'rrgmres')) &&...
         ~((strcmp(adaptConstr, 'nn')||strcmp(adaptConstr, 'box')||strcmp(adaptConstr, 'energy'))||strcmp(adaptConstr, 'project'))
-    error('CGLS can only handle nonnegativity (''nn''), box constraints (''box''), and volume (''energy'') constraints)')
+    error('RRGMRES can only handle nonnegativity (''nn''), box constraints (''box''), and volume (''energy'') constraints)')
+end
+
+if (strcmp(inSolver, 'cgls')) &&...
+        ~((strcmp(adaptConstr, 'sp')||(strcmp(adaptConstr, 'nn')||strcmp(adaptConstr, 'box')||strcmp(adaptConstr, 'energy'))||strcmp(adaptConstr, 'project')))
+    error('CGLS can only handle sparsity (''sp''), nonnegativity (''nn''), box constraints (''box''), and volume (''energy'') constraints)')
 end
 
 % Checking the dimensions.
@@ -347,6 +358,19 @@ end
 if strcmp(inSolver, 'lsqr') || strcmp(inSolver, 'cgls')
     Atb = Atransp_times_vec(A, b(:)); 
     n = length(Atb(:));
+end
+
+if strcmp(adaptConstr, 'spnn') || strcmp(adaptConstr, 'sp')
+    if strcmp(SparsTrans, 'none')
+        Trans = 1;
+    elseif strcmp(SparsTrans, 'dwt')
+        wname   = IRget(options, 'wname',   [], 'fast');
+        wlevels = IRget(options, 'wlevels', [], 'fast'); 
+        if wlevels > 1/2*(log2(n))
+            error('The assigned wavelet levels are too high. Make sure that wlevels <= 1/2*(log2(n))')
+        end
+        Trans = FreqMatrix('dwt', [sqrt(n) sqrt(n)], wname, wlevels);
+    end
 end
 
 if strcmp(adaptConstr, 'tv') || strcmp(adaptConstr, 'tvnn')
@@ -414,8 +438,14 @@ if sum(abs(x0)) > 1e-15
     elseif strcmp(adaptConstr,'sp')
             dp = abs(x0);
             dp(dp < thr0) = thr0;
-            dp = 1./sqrt(dp);
-            L=spdiags(dp,0:0,n,n);
+            if strcmp(inSolver, 'cgls')
+                L = @(x, transp_flag)weightransf(x, dp, Trans, transp_flag);
+            else
+                dp = 1./sqrt(dp);
+                L=spdiags(dp,0:0,n,n);
+            end
+    elseif strcmp(adaptConstr,'none')
+        L = 'identity';
     end
 else
     if ~strcmp(adaptConstr, 'nn'), L = 'identity'; end
@@ -456,7 +486,11 @@ StopReg.It = MaxIter;
 
 Kin = min(MaxIterIn, K(end));
 % TO BE UPDATED (within cycles)
-paramin.x0 = x0;
+if  strcmp(warmrestart, 'on')
+    paramin.x0 = x0;
+else
+    paramin.x0 = zeros(n,1);
+end
 paramin.ktotcount = ktotcount;
 % TO BE (most probably) UPDATED (within cycles, depends on the options)
 paramin.RegMatrix = L;
@@ -529,7 +563,11 @@ while ktotcount < MaxIter
     x0 = Xin(:,lsi_temp);
     Xout(:,kout) = x0;
     x0old = paramin.x0;
-    paramin.x0 = x0;
+    if  strcmp(warmrestart, 'on')
+        paramin.x0 = x0;
+    else
+        paramin.x0 = zeros(n,1);
+    end
     test_saved_it = any(saved_iterations_in == K);
     ltest_saved_it = sum(test_saved_it);
     if ltest_saved_it ~= lsi_temp
@@ -606,11 +644,14 @@ while ktotcount < MaxIter
         elseif strcmp(adaptConstr,'sp')
             dp = abs(x0);
             dp(dp < thr0) = thr0;
-            dp = 1./sqrt(dp);
-            L=spdiags(dp,0:0,n,n);
-            paramin.x0 = x0;
-            paramin.RegMatrix = L;
+            if strcmp(inSolver, 'cgls')
+                L = @(x, transp_flag)weightransf(x, dp, Trans, transp_flag);
+            else
+                dp = 1./sqrt(dp);
+                L=spdiags(dp,0:0,n,n);
+            end
         end
+        paramin.RegMatrix = L;
     end
     if (singular1 <= 1e-15) || singularTV
         disp('The diagonal weighting matrix is numerically zero')

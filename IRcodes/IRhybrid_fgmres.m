@@ -92,6 +92,17 @@ function [X, info] = IRhybrid_fgmres(A, b, varargin)
 %                   * Breakdown of the Arnoldi algorithm
 %                   * The residual norm stabilizes
 %                   * Reached maximum number of iterations
+%      StopReg  - structure with the following fields:
+%                   * X: solution satisfying the stopping criterion
+%                   * It: iteration satisfying the stopping criterion
+%                   * RegP: regularization parameter at the iteration satisfying 
+%                     the stopping crierion
+%                   * Xnrm: norm of the solution satisfying satisfying the
+%                     stopping criterion 
+%                   * Rnrm: relative residual norm at the iteration
+%                     satisfying the stopping criterion
+%                   * Enrm: relative error norm at the iteration
+%                     satisfying the stopping criterion (requires x_true)
 %      Rnrm     - relative residual norms at each iteration
 %      Xnrm     - solution norms
 %      Enrm     - relative error norms (requires x_true) at each iteration
@@ -116,9 +127,10 @@ function [X, info] = IRhybrid_fgmres(A, b, varargin)
 % Set default values for options.
 defaultopt = struct('RegParam', 'gcv', 'x0', 'none', 'x_true', 'none', ...
     'MaxIter', 100 , 'IterBar', 'on', 'stopGCV', 'resflat', ...
-    'resflatTol', 0.05, 'GCVflatTol', 10^-6, 'GCVminTol', 3, ...
+    'resflatTol', 0.05, 'GCVflatTol', 10^-6, 'GCVminTol', 3, 'discrflatTol', 0.9,...
     'tolX', 10^-10, 'NoStop', 'off', 'NoiseLevel', 'none', 'eta', 1.01, ...
-    'RegParam0', 1, 'DecompOut', 'off');
+    'SparsityTrans', 'none', 'wname', 'db1', 'wlevels', 2,...
+    'hybridvariant', 'I', 'RegParam0', 1, 'DecompOut', 'off');
 
 if nargin == 0
     error('Not enough input arguments')
@@ -176,12 +188,15 @@ eta       = IRget(options, 'eta',       [], 'fast');
 RegParamk = IRget(options, 'RegParam0', [], 'fast');
 resdegflat= IRget(options, 'resflatTol',[], 'fast');
 degflat   = IRget(options, 'GCVflatTol',[], 'fast');
+discrflat = IRget(options, 'discrflatTol', [], 'fast');
 tolX      = IRget(options, 'tolX',      [], 'fast');
 mintol    = IRget(options, 'GCVminTol', [], 'fast');
 NoStop    = IRget(options, 'NoStop',    [], 'fast');
 restart   = IRget(options, 'restart',   [], 'fast');
 verbose   = IRget(options, 'verbosity', [], 'fast');
 DecompOut = IRget(options, 'DecompOut', [], 'fast');
+SparsityTrans = IRget(options, 'SparsityTrans', [], 'fast');
+hybridvariant = IRget(options, 'hybridvariant', [], 'fast');
 
 verbose = strcmp(verbose, 'on'); 
 
@@ -198,7 +213,7 @@ if K(end) ~= MaxIter
     MaxIter = K(end);  
 end
 
-if ischar(NoiseLevel) && strcmp(RegParam,'discrep')
+if (strcmp(RegParam,'discrep') || strcmp(RegParam,'discrepit')) && ischar(NoiseLevel)
     error('The noise level must be assigned')
 end
 
@@ -228,6 +243,17 @@ catch
     error('The matrix A must be square; check the length of b.')
 end
 
+if strcmp(SparsityTrans, 'none')
+    Trans = speye(n);
+elseif strcmp(SparsityTrans, 'dwt')
+    wname   = IRget(options, 'wname',   [], 'fast');
+    wlevels = IRget(options, 'wlevels', [], 'fast'); 
+    if wlevels > 1/2*(log2(n))
+        error('The assigned wavelet levels are too high. Make sure that wlevels <= 1/2*(log2(n))')
+    end
+    Trans = FreqMatrix('dwt', [sqrt(n) sqrt(n)], wname, wlevels);
+end
+
 % Setting x0.
 x0 = IRget(options, 'x0', [], 'fast');
 if strcmp(x0,'none')
@@ -235,9 +261,11 @@ if strcmp(x0,'none')
     x0 = zeros(n,1);
     precX = ones(n,1);
 else
-    if length(x0(:))~=n
+    try
+        x0 = Trans*x0;
+    catch
         error('Check the length of x0')
-    end
+    end  
     if max(abs(x0(:))) == 0
         r = b;
         x0 = zeros(n,1);
@@ -250,8 +278,8 @@ else
             end
             r = b - Ax0;
             precX = x0;
-            precX(precX < tolX) = eps;
-            precX = sqrt(precX);
+            precX(abs(precX) < tolX) = eps;
+            precX = sqrt(abs(precX));
         catch
             error('The matrix A must be square; check the length of b.')
         end    
@@ -265,10 +293,20 @@ notrue = strcmp(x_true,'none');
 % We do not want to stop when the stopping criterion is satisfied.
 NoStop = strcmp(NoStop,'on');
 
-% Assessing if we want inner Tikhonov regularization.
+% assessing if we want inner Tikhonov regularization
+% tik = true;
 if strcmp(RegParam,'off')
     RegParam = 0;
 end
+% if isscalar(RegParam)
+%     if isempty(NoiseLevel) || strcmp(NoiseLevel,'none')
+%         NoiseLevel = 0;
+%     else
+%         NoiseLevel = eta*NoiseLevel;
+%     end
+% end
+
+Rfactor = strcmpi(hybridvariant, 'R');
 
 % Declare matrices.
 X                = zeros(n,length(K));
@@ -374,6 +412,27 @@ for k=1:MaxIter
     end
     rhskhat = Uk'*rhsk;
     gmres_res = abs(Uk(:,k+1)'*rhsk)/nrmb;
+    
+    if Rfactor
+        % update the Householder-QR factorization of Lk
+        if k == 1
+            [ZUk, ZRk] = householderQR(Z(:,1:k));
+        else
+            [ZUk, ZRk] = upd_householderQR(Z(:,1:k-1),...
+            Z(:,k), ZUk, ZRk);
+        end
+        ZRksq = ZRk(1:k,1:k);
+        [Uk, Vk, ~, Ck, Sk] = gsvd(Hk, ZRksq);
+        rhskhat = Uk'*rhsk;
+        if k==1
+            gammak = Ck(1)/Sk(1);
+        else
+            gammak = sqrt(diag(Ck'*Ck)./diag(Sk'*Sk));
+        end
+    else
+        ZRksq = eye(k);
+    end
+    
     if isscalar(RegParam)
         RegParamk = RegParam;
         RegParamVect(k) = RegParamk;
@@ -381,20 +440,47 @@ for k=1:MaxIter
         if k==1 
             RegParamVect(k) = RegParamk;
         end
+    elseif strcmp(RegParam, 'discrepit')
+        if gmres_res > eta*NoiseLevel
+            RegParamk = 0;
+            RegParamVect(k) = RegParamk; 
+        else
+            RegParamk = fzero(@(l)discrfcn(l, Hk, ZRksq, rhsk, eta*NoiseLevel), [0, 1e10]);
+            RegParamVect(k) = RegParamk; 
+        end
     elseif strcmp(RegParam,'gcv')
-        RegParamk = fminbnd('TikGCV', 0, Sk(1), [], rhskhat, Sk, n);
+        if ~Rfactor
+            RegParamk = fminbnd('TikGCV', 0, Sk(1), [], rhskhat, Sk);
+            GCValk = GCVstopfun(RegParamk, Uk(1,:)', Sk, nrmb, m, n);
+        else
+            RegParamk = fminbnd('TikGCV', 0, gammak(k), [], rhskhat, gammak);
+            GCValk = GCVstopfun(RegParamk, Uk(1,:)', gammak, nrmb, m, n);
+        end
         RegParamVect(k) = RegParamk;
+        GCV(k) = GCValk;
     else
         error('Invalid parameter choice method')
     end
-    Dk = Sk.^2 + RegParamk^2;
-    rhskhat = Sk .* rhskhat(1:k);
-    yhat = rhskhat ./ Dk;
-    y = Vk * yhat;
+    if ~Rfactor
+        Dk = Sk.^2 + RegParamk^2;
+        rhskhat = Sk .* rhskhat(1:k);
+        yhat = rhskhat(1:k)./Dk;
+        y = Vk * yhat;
+    else
+        HZk = [Hk; RegParamk*ZRksq(1:k,:)];
+        rhsZk = [rhsk; zeros(k,1)];
+        y = HZk\rhsZk;
+    end
     Rnrm(k) = norm(rhsk - Hk*y)/nrmb;
     d = Z(:,1:k)*y;
     x = x0 + d;
-    % Compute norms.
+    precX = abs(x);
+    precX(precX < tolX) = eps;
+    precX = sqrt(precX);
+    % back-transform the solution
+    x = Trans'*x; % x = Trans'*reshape(x, sqrt(n), sqrt(n));
+    x = x(:);
+    % Compute norms
     Xnrm(k) = norm(x(:));
     if errornorms
         Enrm(k) = norm(x_true-x)/nrmtrue;
@@ -408,9 +494,6 @@ for k=1:MaxIter
             BestReg.Rnrm = Rnrm(k);
         end
     end
-    precX = abs(x);
-    precX(precX < tolX) = eps;
-    precX = sqrt(precX);
     AlreadySaved = 0;
     if any(k==K)
         j = j+1;
@@ -583,6 +666,48 @@ for k=1:MaxIter
                 RegParamk = sqrt(RegParamk);
                 if k~=MaxIter, RegParamVect(k+1) = RegParamk; end
         end
+    elseif strcmp(RegParam,'discrepit')
+            if k>2
+                % stopping criterion
+                if StopIt == MaxIter % the method has not stopped, yet
+                    if abs(RegParamVect(k)-RegParamVect(k-1))/RegParamVect(k-1) < discrflat && abs(RegParamVect(k-1)-RegParamVect(k-2))/RegParamVect(k-2)<discrflat
+                        if verbose
+                            disp('The stopping criterion for the discrepancy principle is satisfied')
+                        end
+                        StopFlag = 'discrepancy principle (stopping criterion) satisfied';
+                        if ~AlreadySaved && ~NoStop
+                            j = j+1;
+                            X(:,j) = x;
+                            if restart
+                                saved_iterations(j) = ktotcount;
+                            else
+                                saved_iterations(j) = k;
+                            end
+                            AlreadySaved = 1;
+                        end
+                        StopIt = k;
+                        StopReg.X = x;
+                        StopReg.It = k;
+                        StopReg.RegP = RegParamk;
+                        StopReg.Xnrm = Xnrm(k);
+                        StopReg.Rnrm = Rnrm(k);
+                        if errornorms, StopReg.Enrm = Enrm(k); end
+                        if ~ NoStop
+                            Xnrm    = Xnrm(1:k);
+                            Rnrm    = Rnrm(1:k);
+                            RegParamVect    = RegParamVect(1:k);
+                            H = H(1:k+1,1:k);
+                            Z = Z(:,1:k);
+                            V = V(:,1:k);
+                            if errornorms, Enrm = Enrm(1:k); end
+                            X = X(:,1:j);
+                            saved_iterations = saved_iterations(1:j);
+                            % stop because the discrepancy principle is satisfied
+                            break
+                        end
+                    end
+                end
+            end
     elseif strcmp(RegParam,'gcv')
         % Check the stopping criterion (all the possibilities).
         GCV(k) = GCVstopfun(RegParamk, Uk(1,:)', Sk, beta, n, n);
@@ -766,3 +891,53 @@ if nargout==2
       info.ktotcount = ktotcount;
   end
 end
+
+% ---------------SUBFUNCTIONS ---------------------------------------
+
+function [U,R] = householderQR(L)
+%   
+%  [U,R] = householderQR(L)
+%  This function computes the Householder-QR factorization of L
+%  (a "projected" regularization matrix), that will be used to define a
+%  "projected" regularization matrix R to employ within the GMRES iterates.
+
+[m, n] = size(L);
+R = L;
+U = zeros(m, n);
+for k = 1:n
+    x = L(k:m,k);
+    e = zeros(length(x),1); e(1) = 1;
+    u = sign(x(1))*norm(x(:))*e + x;
+    u = u./norm(u(:));
+    R(k:m, k:n) = R(k:m, k:n) -2*u*(u'*R(k:m, k:n));
+    U(k:m,k) = u;
+end
+
+function [U,R] = upd_householderQR(L,ll,U,R)
+%   
+% [U,R] = upd_householderQR(L, ll, U, R)
+% This function updates the Householder-QR factorization of [L, ll].
+%
+% Input:
+%   L  - matrix whose QR factorization is defined by U and R
+%   ll - column appended to L, i.e., [L, ll]
+%   U  - matrix defining the orthogonal matrix Q, such that L = QR
+%   R  - upper triangular factor of L = QR
+
+[m,n] = size(L);
+Unew = zeros(m, n+1);
+Unew(:,1:n) = U;
+w = ll;
+for i = 1:n
+    u = U(i:m,i);
+    w(i:m) = w(i:m) - 2*u*(u'*w(i:m));
+end
+v = w(1:n); x = w(n+1:m);
+e = zeros(length(x),1); e(1) = 1;
+u = sign(x(1))*norm(x(:))*e + x;
+u = u./norm(u(:));
+x = x -2*u*(u'*x);
+Unew(n+1:m,n+1)=u;
+U = Unew;
+rr = [v; x];
+R = [R, rr];

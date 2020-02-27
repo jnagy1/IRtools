@@ -77,10 +77,10 @@ function [X, info] = IRirn(A, b, varargin)
 %      stopOut       - stopping criterion for the outer iterations;
 %                      [ {'xstab'} | 'Lxstab' | 'regPstab' ]
 %      inSolver      - solver to be employed during the inner iterations
-%                      [ {'gmres'} | 'lsqr' | 'fgmres' ]
+%                      [ {'gmres'} | 'lsqr' | 'fgmres' | 'cgls']
 %      adaptConstr   - approximate constraint or regularization to be
 %                      incorporated
-%                      [ {'sp'} | 'spnn' ]
+%                      [ {'sp'} | 'spnn' | 'none' ]
 %      nonnegativity - may be used to also impose nonnegativity
 %                      (similarly to 'spnn')
 %                      [ 'on' | {'off'} ]
@@ -126,7 +126,7 @@ function [X, info] = IRirn(A, b, varargin)
 %                 satisfies the stopping criterion.  Fields:
 %                   It   : iteration where the stopping criterion is satisfied
 %                   X    : solution satisfying the stopping criterion
-%                   Enrm : best relative error (requires x_true)
+%                   Enrm : the corresponding relative error (requires x_true)
 %      BestReg  - struct containing information about the solution that
 %                 minimizes Enrm (requires x_true). Fields:
 %                   It   : iteration where the minimum is attained
@@ -151,7 +151,8 @@ defaultopt = struct('x0', 'none', 'MaxIterIn', 30 , 'MaxIterOut', 20 , ...
     'x_true', 'none', 'IterBar', 'on', 'NoStop', 'off', 'NoStopIn', 'off',...
     'NoStopOut', 'off', 'stopOut', 'xstab', 'stabOut', 1e-6, 'thr0', 1e-10, ...
     'NoiseLevel', 'none', 'eta', 1.01, 'RegParam0', 1, 'inSolver', 'gmres', ...
-    'adaptConstr', 'sp', 'nonnegativity', 'off', 'verbosity', 'off');
+    'adaptConstr', 'sp', 'nonnegativity', 'off', 'verbosity', 'off',...
+    'SparsityTrans', 'none', 'wname', 'db1', 'wlevels', 2, 'warmrestart', 'on');
   
 % If input is 'defaults,' return the default options in X.
 if nargin==1 && nargout <= 1 && isequal(A,'defaults')

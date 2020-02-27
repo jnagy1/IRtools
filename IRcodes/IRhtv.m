@@ -122,7 +122,7 @@ function [X, info] = IRhtv(A, b, varargin)
 %                 satisfies the stopping criterion.  Fields:
 %                   It   : iteration where the stopping criterion is satisfied
 %                   X    : solution satisfying the stopping criterion
-%                   Enrm : best relative error (requires x_true)
+%                   Enrm : the corresponding relative error (requires x_true)
 %      BestReg  - struct containing information about the solution that
 %                 minimizes Enrm (requires x_true). Fields:
 %                   It   : iteration where the minimum is attained

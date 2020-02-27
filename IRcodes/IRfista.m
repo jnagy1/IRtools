@@ -51,8 +51,18 @@ function [X,info] = IRfista(A,b,varargin)
 %                   [ {Inf} | scalar value ]
 %      xEnergy    - value of the energy constraint
 %                   [ {'none'} | positive scalar ]
+%      shrink     - determine wether iterative shrinkage thresholding is applied
+%                   [ {'off'} | 'on' ]
 %      IterBar    - shows the progress of the iterations
 %                   [ {'on'} | 'off' ]
+%   SparsityTrans - sparsity transform for the solution
+%                   [ {'none'} | 'dwt' ]
+%      wname      - discrete wavelet transform name (meaningful if 
+%                   SpartistyTrans is 'dwt')
+%                   [ {'db1'} ]
+%      wlevels    - discrete wavelet transform level (meaningful if 
+%                   SpartistyTrans is 'dwt')
+%                   [ {2} | positive integer]
 % Note: the options structure can be created using the function IRset.
 %
 % Outputs:
@@ -68,14 +78,16 @@ function [X,info] = IRfista(A,b,varargin)
 %      NE_Rnrm  - normal eqs relative residual norms at each iteration
 %      Xnrm     - solution norms at each iteration
 %      Enrm     - relative error norms (requires x_true) at each iteration
-%      BestReg  - struct containing information about the solution that
-%                 minimizes Enrm (requires x_true).  Fields:
-%                   It : iteration where the minimum is attained
-%                   X  : best solution
 %      StopReg  - struct containing information about the solution that
 %                 satisfies the stopping criterion.  Fields:
-%                   It : iteration where the stopping criterion is satisfied
-%                   X  : solution satisfying the stopping criterion
+%                   It :  iteration where the stopping criterion is satisfied
+%                   X  :  solution satisfying the stopping criterion
+%                   Enrm: the corresponding relative error (requires x_true)
+%      BestReg  - struct containing information about the solution that
+%                 minimizes Enrm (requires x_true).  Fields:
+%                   It :  iteration where the minimum is attained
+%                   X  :  best solution
+%                   Enrm: best relative error
 %
 % See also: IRconstr_ls, IRmrnsd, IRnnfcgls, IRget, IRset
 
@@ -91,7 +103,10 @@ function [X,info] = IRfista(A,b,varargin)
 % Set default values for options.
 defaultopt = struct('x0','none', 'MaxIter',100 , 'x_true','none', ...
     'NoiseLevel','none', 'eta',1.01, 'NE_Rtol',1e-12, 'IterBar','on', ...
-    'NoStop','off', 'RegParam',0, 'xMin',0, 'xMax',Inf, 'xEnergy','none');
+    'NoStop','off', 'shrink', 'off', 'RegParam',0, 'xMin',0, 'xMax',Inf,...
+    'xEnergy','none','stepsize','none',...
+    'backtracking','off','backit',10,'backscalar',1.1,...
+    'SparsityTrans', 'none', 'wname', 'db1', 'wlevels', 2);
   
 % If input is 'defaults,' return the default options in X
 if nargin==1 && nargout <= 1 && isequal(A,'defaults')
@@ -128,17 +143,22 @@ end
 
 options = IRset(defaultopt, options);
 
-MaxIter    = IRget(options, 'MaxIter',    [], 'fast');
-x_true     = IRget(options, 'x_true',     [], 'fast');
-NoiseLevel = IRget(options, 'NoiseLevel', [], 'fast');
-eta        = IRget(options, 'eta',        [], 'fast');
-NE_Rtol    = IRget(options, 'NE_Rtol',    [], 'fast');
-IterBar    = IRget(options, 'IterBar',    [], 'fast');
-TikParam   = IRget(options, 'RegParam',   [], 'fast');
-xMin       = IRget(options, 'xMin',       [], 'fast');
-xMax       = IRget(options, 'xMax',       [], 'fast');
-xEnergy    = IRget(options, 'xEnergy',    [], 'fast');
-NoStop     = IRget(options, 'NoStop',     [], 'fast');
+MaxIter    = IRget(options, 'MaxIter',      [], 'fast');
+x_true     = IRget(options, 'x_true',       [], 'fast');
+NoiseLevel = IRget(options, 'NoiseLevel',   [], 'fast');
+eta        = IRget(options, 'eta',          [], 'fast');
+NE_Rtol    = IRget(options, 'NE_Rtol',      [], 'fast');
+IterBar    = IRget(options, 'IterBar',      [], 'fast');
+TikParam   = IRget(options, 'RegParam',     [], 'fast');
+xMin       = IRget(options, 'xMin',         [], 'fast');
+xMax       = IRget(options, 'xMax',         [], 'fast');
+xEnergy    = IRget(options, 'xEnergy',      [], 'fast');
+NoStop     = IRget(options, 'NoStop',       [], 'fast');
+shrinkage  = IRget(options, 'shrink',       [], 'fast');
+t          = IRget(options, 'stepsize',     [], 'fast');
+backtrack  = IRget(options, 'backtracking', [], 'fast');
+SparsTrans = IRget(options, 'SparsityTrans',[], 'fast');
+
 
 NoStop = strcmp(NoStop,'on'); 
 
@@ -156,13 +176,33 @@ end
 
 StopIt = MaxIter;
 
-normestA = IRnormest(A, b);
-t = 1/(normestA^2 + TikParam^2);
+if ischar(t)
+    normestA = IRnormest(A, b);
+    t = 1/(normestA^2 + TikParam^2);
+end
 
 if isempty(NoiseLevel) || strcmp(NoiseLevel,'none')
     Rtol = 0;
 else
     Rtol = eta*NoiseLevel;
+end
+
+shrinkage = strcmp(shrinkage, 'on');
+if shrinkage
+    if ischar(TikParam) || (isscalar(TikParam) && TikParam == 0)
+        error('A positive value for the regularization parameter should be assigned')
+    else
+        thrshrink = TikParam*t;
+    end
+end
+
+backtrack = strcmp(backtrack, 'on');
+if backtrack
+    backit     = IRget(options, 'backit', [], 'fast');
+    backscalar = IRget(options, 'backscalar', [], 'fast');
+    if backscalar < 1
+        error(' The backtracking constant should be strictly greater than 1')
+    end
 end
 
 %  We need to find the number of columns in matrix A, but if A is not given 
@@ -171,17 +211,32 @@ end
 d = Atransp_times_vec(A, b);
 n = length(d);
 
+if strcmp(SparsTrans, 'none')
+    Trans = speye(n);
+elseif strcmp(SparsTrans, 'dwt')
+    wname   = IRget(options, 'wname',   [], 'fast');
+    wlevels = IRget(options, 'wlevels', [], 'fast'); 
+    if wlevels > 1/2*(log2(n))
+        error('The assigned wavelet levels are too high. Make sure that wlevels <= 1/2*(log2(n))')
+    end
+    Trans = FreqMatrix('dwt', [sqrt(n) sqrt(n)], wname, wlevels);
+end
+
 % See if an initial guess is given; if not use 0 as the initial guess.  
 x = IRget(options, 'x0', [], 'fast');
 
 if strcmp(x,'none')
-    % the default initial guess for the iterations is defined as the
-    % minimizer of || b - A*(alpha*ones(n,1)) ||_2
-    coeffx0 = A_times_vec(A, ones(n,1)); alpha = (coeffx0'*b)/norm(coeffx0)^2;
-    if coeffx0 <= 0
-        alpha = sqrt(eps);
+    if ~shrinkage
+        % the default initial guess for the iterations is defined as the
+        % minimizer of || b - A*(alpha*ones(n,1)) ||_2
+        coeffx0 = A_times_vec(A, ones(n,1)); alpha = (coeffx0'*b)/norm(coeffx0)^2;
+        if coeffx0 <= 0
+            alpha = sqrt(eps);
+        end
+        x = alpha*ones(n,1);
+    else
+        x = zeros(n,1);
     end
-    x = alpha*ones(n,1);
 end
 
 Ax = A_times_vec(A, x);
@@ -212,18 +267,69 @@ nrmb = norm(b(:));
 nrmAtb = norm(d(:));
 
 %  We need to initialize this method with the first two iterations.
+
 %  Here is iteration 1:
-x = x + t*(d - TikParam^2*x);
-x = Project(x, xMin, xMax, xEnergy);
+if shrinkage 
+    xnew = x + t*d;
+    try
+        xnew = Trans*xnew;
+        xnew = Shrink(xnew, thrshrink);
+        xnew = Trans'*xnew;
+    catch
+        error('Check the length of x0')
+    end    
+else
+    xnew = x + t*(d - TikParam^2*x);
+end
+xnew = Project(xnew, xMin, xMax, xEnergy);
+
+% stuff needed for backtracking
+% Ax = A_times_vec(A, x);
+% r = b - Ax;
+% 
+Axnew = A_times_vec(A, xnew);
+rnew = b - Axnew;
+if backtrack
+    if shrinkage
+        Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew,1);
+        Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew,1);
+    else
+        Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew)^2;
+        Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew)^2;
+    end
+    backittemp = 1;
+    while Fx>Qxy && backittemp < backit
+        t = t/backscalar;
+        if shrinkage
+            thrshrink = TikParam*t;
+            xnew = x + t*d;
+            xnew = Trans*xnew; xnew = Shrink(xnew, thrshrink); xnew = Trans'*xnew;
+        else
+            xnew = x + t*(d - TikParam^2*x);
+        end
+        xnew = Project(xnew, xMin, xMax, xEnergy);
+        Axnew = A_times_vec(A, xnew);
+        rnew = b - Axnew;
+        if shrinkage
+            Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew,1);
+            Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew,1);
+        else
+            Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew)^2;
+            Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew)^2;
+        end
+        backittemp = backittemp + 1;
+    end
+end
+x = xnew;
+r = rnew;
 x_save1 = x;
-j = 0;
+j = 0;    
 if any(K == 1)
     j = j+1;
     X(:,j) = x;
     saved_iterations(j) = 1;
 end
-Ax = A_times_vec(A, x);
-r = b - Ax;
+
 Rnrm(1) = norm(r)/nrmb;
 d = Atransp_times_vec(A, r);
 NE_Rnrm(1) = norm(d)/nrmAtb;
@@ -242,16 +348,56 @@ end
 
 % And here is iteration 2:
 tk = 0.5*(1+sqrt(5));
-x = x + t*(d - TikParam^2*x);
-x = Project(x, xMin, xMax, xEnergy);
+if shrinkage 
+    xnew = x + t*d;
+    xnew = Trans*xnew;
+    xnew = Shrink(xnew, thrshrink);
+    xnew = Trans'*xnew;
+else
+    xnew = x + t*(d - TikParam^2*x);
+end
+xnew = Project(xnew, xMin, xMax, xEnergy);
+Axnew = A_times_vec(A, xnew);
+rnew = b - Axnew;
+if backtrack
+    if shrinkage
+        Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew,1);
+        Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew,1);
+    else
+        Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew)^2;
+        Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew)^2;
+    end
+    backittemp = 1;
+    while Fx>Qxy && backittemp < backit
+        t = t/backscalar;
+        if shrinkage
+            thrshrink = TikParam*t;
+            xnew = x + t*d;
+            xnew = Trans*xnew; xnew = Shrink(xnew, thrshrink); xnew = Trans'*xnew;
+        else
+            xnew = x + t*(d - TikParam^2*x);
+        end
+        xnew = Project(xnew, xMin, xMax, xEnergy);
+        Axnew = A_times_vec(A, xnew);
+        rnew = b - Axnew;
+        if shrinkage
+            Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew,1);
+            Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew,1);
+        else
+            Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew)^2;
+            Qxy = 1/2*norm(r)^2 + (xnew - x)'*d(:) + 1/(2*t)*norm(x - xnew)^2 + TikParam*norm(xnew)^2;
+        end
+        backittemp = backittemp + 1;
+    end
+end
+x = xnew;
+r = rnew;
 x_save2 = x;
 if any(K == 2)
     j = j+1;
     X(:,j) = x;
     saved_iterations(j) = 2;
 end
-Ax = A_times_vec(A, x);
-r = b - Ax;
 Rnrm(2) = norm(r)/nrmb;
 d = Atransp_times_vec(A, r);
 NE_Rnrm(2) = norm(d)/nrmAtb;
@@ -283,8 +429,50 @@ for k=3:MaxIter
     y = x_save2 + ((tk_save-1)/tk)*(x_save2 - x_save1);
     Ay = A_times_vec(A, y);
     d = Atransp_times_vec(A, b-Ay);
-    x = y + t*(d - TikParam^2*y);
-    x = Project(x, xMin, xMax, xEnergy);
+    if shrinkage 
+        xnew = y + t*d;
+        xnew = Trans*xnew;
+        xnew = Shrink(xnew, thrshrink);
+        xnew = Trans'*xnew;
+    else
+        xnew = y + t*(d - TikParam^2*y);
+    end
+    xnew = Project(xnew, xMin, xMax, xEnergy);
+    Axnew = A_times_vec(A, xnew);
+    rnew = b - Axnew;
+    if backtrack
+        if shrinkage
+            Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew,1);
+            Qxy = 1/2*norm(r)^2 + (xnew - y)'*d(:) + 1/(2*t)*norm(xnew - y)^2 + TikParam*norm(xnew,1);
+        else
+            Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew)^2;
+            Qxy = 1/2*norm(r)^2 + (xnew - y)'*d(:) + 1/(2*t)*norm(xnew - y)^2 + TikParam*norm(xnew)^2;
+        end
+        backittemp = 1;
+        while Fx>Qxy && backittemp < backit
+            t = t/backscalar;
+            if shrinkage
+                thrshrink = TikParam*t;
+                xnew = y + t*d;
+                xnew = Trans*xnew; xnew = Shrink(xnew, thrshrink); xnew = Trans'*xnew;
+            else
+                xnew = y + t*(d - TikParam^2*y);
+            end
+            xnew = Project(xnew, xMin, xMax, xEnergy);
+            Axnew = A_times_vec(A, xnew);
+            rnew = b - Axnew;
+            if shrinkage
+                Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew,1);
+                Qxy = 1/2*norm(r)^2 + (xnew - y)'*d(:) + 1/(2*t)*norm(xnew - y)^2 + TikParam*norm(xnew,1);
+            else
+                Fx = 1/2*norm(rnew)^2 + TikParam*norm(xnew)^2;
+                Qxy = 1/2*norm(r)^2 + (xnew - y)'*d(:) + 1/(2*t)*norm(xnew - y)^2 + TikParam*norm(xnew)^2;
+            end
+            backittemp = backittemp + 1;
+        end
+    end
+    x = xnew;
+    r = rnew;
     if any(k==K) && ~AlreadySaved
         j = j+1;
         X(:,j) = x;
@@ -293,11 +481,8 @@ for k=3:MaxIter
     end
     x_save1 = x_save2;
     x_save2 = x;
-    
     % Compute norms.
     Xnrm(k) = norm(x);
-    Ax = A_times_vec(A, x);
-    r = b - Ax;
     Rnrm(k) = norm(r)/nrmb;
     NE_Rnrm(k) = norm(Atransp_times_vec(A,r))/nrmAtb;
     
@@ -399,27 +584,6 @@ if nargout==2
 end
 
 
-function sigma = IRnormest(A, b)
-%  We sometimes need an estimate of the 2-norm of the matrix A.  We want to 
-%  allow for user-defined objects and function handles that implement matrix
-%  vector multiplication with A.  So we cannot use MATLAB's built-in
-%  normest, nor can we use svds.  So we'll use a few iterations of our 
-%  Lanczos bidiagonalization as implemented in HyBR to get an estimate of 
-%  the largest singular value.
-% HyBRoptions = HyBRset;
-% HyBRoptions = HyBRset(HyBRoptions, 'InSolv', 'Tikhonov', 'RegPar', 0, 'Iter', 5, 'Reorth', 'on', 'verbosity', 'off');
-% [~, HyBRout] = HyBR_for_IRtools(A, b, [], HyBRoptions, 'off', 'off');
-% sigma = max(svd(HyBRout.B));
-
-optnrm.RegParam = 0;
-optnrm.MaxIter = 5;
-optnrm.Reorth = 'on';
-optnrm.DecompOut = 'on';
-optnrm.IterBar = 'off';
-optnrm.verbosity = 'off';
-[~, infonrm] = IRhybrid_lsqr(A, b, optnrm);
-sigma = max(svd(infonrm.B));
-
 function x = Project(x, xMin, xMax, xEnergy)
 %
 %  Compute the projection
@@ -430,3 +594,9 @@ if strcmpi(xEnergy,'none')
 else
     x = gdnnf_projection(x, xEnergy);
 end
+
+function x = Shrink(x, T)
+%
+%  Compute the shrinkage
+%
+x = sign(x).*max(abs(x)-T, 0);
