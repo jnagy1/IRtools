@@ -78,7 +78,7 @@ function [X, info] = IRrestart(A, b, varargin)
 %             stopOut - stopping criterion for the outer iterations;
 %                       [ {'xstab'} | 'Lxstab' | 'regPstab' ]
 %             inSolver - solver to be employed during the inner iterations
-%                       [ {'gmres'} | 'lsqr' | 'fgmres' | 'rrgmres' | 'cgls' ]
+%                       [ 'gmres' | {'lsqr'} | 'fgmres' | 'rrgmres' | 'cgls' ]
 %             adaptConstr - approximate constraint or regularization
 %                           to be incorporated
 %                           [ {'tv'} | 'nn' | 'tvnn' | 'sp' | 'spnn' |
@@ -161,7 +161,7 @@ defaultopt = struct('x0', 'none', 'MaxIterIn', 30 , 'MaxIterOut', 20 , ...
     'x_true', 'none', 'IterBar', 'on', 'NoStop', 'off', 'NoStopIn', 'off', ...
     'NoStopOut', 'off', 'stopOut', 'xstab', 'stabOut', 1e-6, 'thr0', 1e-10, ...
     'NoiseLevel', 'none', 'eta', 1.01, 'RegParam0', 1,...
-    'inSolver', 'gmres', 'adaptConstr', 'tv', 'verbosity', 'off',...
+    'inSolver', 'lsqr', 'adaptConstr', 'tv', 'verbosity', 'off',...
     'SparsityTrans', 'none', 'wname', 'db1', 'wlevels', 2, 'warmrestart', 'on');
   
 % If input is 'defaults,' return the default options in X.
@@ -348,10 +348,10 @@ if strcmp(inSolver, 'gmres') || strcmp(inSolver, 'fgmres') || strcmp(inSolver, '
     try
         test_sq = A_times_vec(A, test_sq);
         if (length(test_sq)~=n)
-            error('A and b are incopatible; check the size of A and the size of b')
+            error('With GMRES as the inner solver, the matrix A must be square; consider changing options.inSolver to LSQR')
         end
     catch
-        error('A and b are incopatible; check the size of A and the size of b')
+        error('With GMRES as the inner solver, the matrix A must be square; consider changing options.inSolver to LSQR')
     end
 end
 
