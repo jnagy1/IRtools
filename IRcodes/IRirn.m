@@ -13,7 +13,7 @@ function [X, info] = IRirn(A, b, varargin)
 % IRirn is a simplified driver for IRrestart, which uses an inner-outer 
 % iteration scheme. Semi-convergent or hybrid iterative solvers are used 
 % in the inner iterations, using one of the iterative methods in IRtools 
-% (e.g., IRhybrid_gmres). In the case of IRirn, the 1-norm penalization 
+% (e.g., IRhybrid_lsqr). In the case of IRirn, the 1-norm penalization 
 % is updated at each outer iteration. 
 %
 % The regularization parameter and number of inner iterations influence
@@ -77,7 +77,7 @@ function [X, info] = IRirn(A, b, varargin)
 %      stopOut       - stopping criterion for the outer iterations;
 %                      [ {'xstab'} | 'Lxstab' | 'regPstab' ]
 %      inSolver      - solver to be employed during the inner iterations
-%                      [ {'gmres'} | 'lsqr' | 'fgmres' | 'cgls']
+%                      [ 'gmres' | {'lsqr'} | 'fgmres' | 'cgls']
 %      adaptConstr   - approximate constraint or regularization to be
 %                      incorporated
 %                      [ {'sp'} | 'spnn' | 'none' ]
@@ -150,7 +150,7 @@ defaultopt = struct('x0', 'none', 'MaxIterIn', 30 , 'MaxIterOut', 20 , ...
     'resflatTol', 0.05, 'GCVflatTol', 10^-6, 'GCVminTol', 3,...
     'x_true', 'none', 'IterBar', 'on', 'NoStop', 'off', 'NoStopIn', 'off',...
     'NoStopOut', 'off', 'stopOut', 'xstab', 'stabOut', 1e-6, 'thr0', 1e-10, ...
-    'NoiseLevel', 'none', 'eta', 1.01, 'RegParam0', 1, 'inSolver', 'gmres', ...
+    'NoiseLevel', 'none', 'eta', 1.01, 'RegParam0', 1, 'inSolver', 'lsqr', ...
     'adaptConstr', 'sp', 'nonnegativity', 'off', 'verbosity', 'off',...
     'SparsityTrans', 'none', 'wname', 'db1', 'wlevels', 2, 'warmrestart', 'on');
   
