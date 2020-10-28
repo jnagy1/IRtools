@@ -283,7 +283,21 @@ switch field
   case {'DecompOut'} % off, on
     [validvalue, errmsg] = onOffType(field,value);
   case{'sirt_method'}
-    [validvalue, errmsg] = sirtType(field,value);  
+    [validvalue, errmsg] = sirtType(field,value); 
+  case{'warmrestart'} % off, on
+    [validvalue, errmsg] = onOffType(field,value);
+  case{'SparsityTrans'}
+    [validvalue, errmsg] = SparsityTransType(field,value); 
+  case {'shrink'} % off, on
+    [validvalue, errmsg] = onOffType(field,value);
+  case {'stepsize'}% real non-negative scalar
+    [validvalue, errmsg] = stepsizeoption(field,value);
+  case {'backtracking'} % off, on
+    [validvalue, errmsg] = onOffType(field,value);
+  case {'backscalar'}% real non-negative scalar
+    [validvalue, errmsg] = nonNegscalar(field,value);
+  case {'backit'} % real positive integer
+    [validvalue, errmsg] = PosInteger(field,value);
   otherwise
     %validfield = false;  
     validvalue = false;
@@ -624,3 +638,28 @@ if ~valid
 else
   errmsg = '';
 end
+
+
+%-----------------------------------------------------------------------
+
+function [valid, errmsg] = SparsityTransType(field,value)
+valid =  ischar(value) && any(strcmpi(value,{'none';'dwt';'dct';'svd';'tv1D';'tv2D'}));
+if ~valid
+  errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be ''none'' or ''dwt'' or ''dct'' or ''svd'' or ''tv1D'' or ''tv2D''.',field);
+else
+  errmsg = '';
+end
+
+
+%------------------------------------------------------------------------
+
+function [valid, errmsg] = stepsizeoption(field,value)
+% Any real non-negative scalar
+valid =  (isreal(value) && isscalar(value) && (value >= 0)) || (ischar(value) && (strcmp(value, 'none') ));
+
+if ~valid
+ errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be a real non-negative scalar.',field);
+else
+  errmsg = '';
+end
+
