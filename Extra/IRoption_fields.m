@@ -71,6 +71,11 @@ allfields = {'x0';
     'nonnegativity';
     'DecompOut';
     'warmrestart';
-    'SparsityTrans'};
+    'SparsityTrans';
+    'shrink';
+    'stepsize';
+    'backtracking';
+    'backit';
+    'backscalar'};
 
 
