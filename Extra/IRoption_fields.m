@@ -69,6 +69,8 @@ allfields = {'x0';
     'inSolver'; 
     'adaptConstr';
     'nonnegativity';
-    'DecompOut'};
+    'DecompOut';
+    'warmrestart';
+    'SparsityTrans'};
 
 
