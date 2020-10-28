@@ -8,7 +8,7 @@ function [X,info] = IRfista(A,b,varargin)
 % [X,info] = IRfista(A,b,K,options)
 %
 % This function uses the first-order optimization method FISTA to solve
-% the solves the least squares or Tikhonov problem with constraints.
+% the least squares, Tikhonov, or l1-regularized problem with constraints.
 %
 % With 'defaults' as input returns the default options.  Otherwise outputs
 % the iterates specified in K, using max(K) as MaxIter, and using all other
@@ -176,9 +176,13 @@ end
 
 StopIt = MaxIter;
 
-if ischar(t)
+if ischar(t) 
     normestA = IRnormest(A, b);
-    t = 1/(normestA^2 + TikParam^2);
+    if shrinkage
+        t = 1/(normestA^2);
+    else
+        t = 1/(normestA^2 + TikParam^2);
+    end 
 end
 
 if isempty(NoiseLevel) || strcmp(NoiseLevel,'none')
@@ -269,6 +273,8 @@ nrmAtb = norm(d(:));
 %  We need to initialize this method with the first two iterations.
 
 %  Here is iteration 1:
+k = 1;
+AlreadySaved = 0;
 if shrinkage 
     xnew = x + t*d;
     try
@@ -324,29 +330,32 @@ x = xnew;
 r = rnew;
 x_save1 = x;
 j = 0;    
-if any(K == 1)
+if any(K == k) && ~AlreadySaved
+    AlreadySaved = 1;
     j = j+1;
     X(:,j) = x;
     saved_iterations(j) = 1;
 end
 
-Rnrm(1) = norm(r)/nrmb;
+Rnrm(k) = norm(r)/nrmb;
 d = Atransp_times_vec(A, r);
-NE_Rnrm(1) = norm(d)/nrmAtb;
+NE_Rnrm(k) = norm(d)/nrmAtb;
 if errornorms
-    Enrm(1) = norm(x_true-x)/nrmtrue;
-    if Enrm(1)<BestEnrm
-        BestReg.It = 1;
+    Enrm(k) = norm(x_true-x)/nrmtrue;
+    if Enrm(k)<BestEnrm
+        BestReg.It = k;
         BestReg.X = x;
-        BestEnrm = Enrm(1);
+        BestEnrm = Enrm(k);
         BestReg.Enrm = BestEnrm;
-        BestReg.Xnrm = Xnrm(1);
-        BestReg.Rnrm = Rnrm(1);
-        BestReg.NE_Rnrm = NE_Rnrm(1);
+        BestReg.Xnrm = Xnrm(k);
+        BestReg.Rnrm = Rnrm(k);
+        BestReg.NE_Rnrm = NE_Rnrm(k);
     end
 end
 
 % And here is iteration 2:
+k = 2;
+AlreadySaved = 0;
 tk = 0.5*(1+sqrt(5));
 if shrinkage 
     xnew = x + t*d;
@@ -393,24 +402,25 @@ end
 x = xnew;
 r = rnew;
 x_save2 = x;
-if any(K == 2)
+if any(K == k) && ~AlreadySaved
+    AlreadySaved = 1;
     j = j+1;
     X(:,j) = x;
     saved_iterations(j) = 2;
 end
-Rnrm(2) = norm(r)/nrmb;
+Rnrm(k) = norm(r)/nrmb;
 d = Atransp_times_vec(A, r);
-NE_Rnrm(2) = norm(d)/nrmAtb;
+NE_Rnrm(k) = norm(d)/nrmAtb;
 if errornorms
-    Enrm(2) = norm(x_true-x)/nrmtrue;
-    if Enrm(2)<BestEnrm
-        BestReg.It = 2;
+    Enrm(k) = norm(x_true-x)/nrmtrue;
+    if Enrm(k)<BestEnrm
+        BestReg.It = k;
         BestReg.X = x;
-        BestEnrm = Enrm(2);
+        BestEnrm = Enrm(k);
         BestReg.Enrm = BestEnrm;
-        BestReg.Xnrm = Xnrm(2);
-        BestReg.Rnrm = Rnrm(2);
-        BestReg.NE_Rnrm = NE_Rnrm(2);
+        BestReg.Xnrm = Xnrm(k);
+        BestReg.Rnrm = Rnrm(k);
+        BestReg.NE_Rnrm = NE_Rnrm(k);
     end
 end
 
@@ -419,6 +429,7 @@ noIterBar = strcmp(IterBar,{'off'});
 if ~noIterBar
   h_wait = waitbar(0, 'Running iterations, please wait ...');
 end
+if MaxIter>=3
 for k=3:MaxIter
     AlreadySaved = 0;
     if ~noIterBar
@@ -544,6 +555,7 @@ for k=3:MaxIter
             break
         end 
     end
+end
 end
 
 if k == MaxIter
