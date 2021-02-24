@@ -451,10 +451,10 @@ for k=1:MaxIter
     elseif strcmp(RegParam,'gcv')
         if ~Rfactor
             RegParamk = fminbnd('TikGCV', 0, Sk(1), [], rhskhat, Sk);
-            GCValk = GCVstopfun(RegParamk, Uk(1,:)', Sk, nrmb, m, n);
+            GCValk = GCVstopfun(RegParamk, Uk(1,:)', Sk, nrmb, n, n);
         else
             RegParamk = fminbnd('TikGCV', 0, gammak(k), [], rhskhat, gammak);
-            GCValk = GCVstopfun(RegParamk, Uk(1,:)', gammak, nrmb, m, n);
+            GCValk = GCVstopfun(RegParamk, Uk(1,:)', gammak, nrmb, n, n);
         end
         RegParamVect(k) = RegParamk;
         GCV(k) = GCValk;
