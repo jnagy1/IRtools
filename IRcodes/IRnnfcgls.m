@@ -319,7 +319,7 @@ switch param.exitflag
     case 2
         StopFlag = 'Reached maximum number of (total) iterations';
     case 3
-        StopFlag = 'Discrepancy principle satisfied';
+        StopFlag = 'Residual tolerance satisfied';
 end
 IterIn = IterIn(1:kout, :);
 if ~noIterBar
@@ -526,7 +526,7 @@ for i = 1:MaxIterIn
         if Rnrm(k) < eta*NoiseLevel
             if StopIt >= k
                 if verbose
-                    disp('The discrepancy principle is satisfied')
+                    disp('Residual tolerance satisfied')
                 end
                 exitflag = 3;
                 StopReg.It = k;
