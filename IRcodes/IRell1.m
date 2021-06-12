@@ -9,7 +9,7 @@ function [X, info] = IRell1(A, b, varargin)
 %
 % This penalized iterative method enforces sparsity on the solution via a
 % 1-norm penalization term.  This function is a simplified driver for
-% IRhybrid_fgmres.
+% IRhybrid_flsqr or IRhybrid_fgmres.
 %
 % With 'defaults' as input returns the default options.  Otherwise outputs
 % the iterates specified in K, using max(K) as MaxIter, and using all other
@@ -17,7 +17,7 @@ function [X, info] = IRell1(A, b, varargin)
 % and all the other default options.
 %
 % Inputs:
-%  A : either (a) a full or sparse matrix (must be square)
+%  A : either (a) a full or sparse matrix
 %             (b) a matrix object that performs the matrix*vector operation
 %             (c) user-defined function handle
 %  b : right-hand side vector
@@ -25,6 +25,9 @@ function [X, info] = IRell1(A, b, varargin)
 %      in X; the maximum number of iterations is assumed to be max(K)
 %      [ positive integer | vector of positive components ]
 %  options : structure with the following fields (optional)
+%      solver     - specifies which flexible solver is used
+%                   [ {'flsqr'} | 'fgmres' ]
+%                   NOTE: 'fgmres' only works with square A
 %      x0         - initial guess for the iterations; default = zero vector
 %                   [ array | {'none'} ]
 %      MaxIter    - maximum allowed number of cgls iterations
@@ -110,7 +113,7 @@ function [X, info] = IRell1(A, b, varargin)
 % of the package.
 
 % Set default values for options.
-defaultopt = struct('x0', 'none', 'MaxIter', 100 , 'RegParam', 'gcv', ...
+defaultopt = struct('solver', 'flsqr', 'x0', 'none', 'MaxIter', 100 , 'RegParam', 'wgcv', ...
     'stopGCV', 'resflat', 'resflatTol', 0.05, 'GCVflatTol', 10^-6, ...
     'GCVminTol', 3, 'x_true', 'none', 'IterBar', 'on', 'NoStop', 'off', ...
     'thr0', 1e-10, 'NoiseLevel', 'none', 'eta', 1.01, 'RegParam0', 1);
@@ -147,8 +150,19 @@ end
 
 % Call IRhybrid_fgmres with the specific options.
 options = IRset(defaultopt, options);
-if isempty(K)
-    [X, info] = IRhybrid_fgmres(A, b, options);
+solver = IRget(options, 'solver', [], 'fast');
+if strcmpi(solver, 'flsqr')
+    if isempty(K)
+        [X, info] = IRhybrid_flsqr(A, b, options);
+    else
+        [X, info] = IRhybrid_flsqr(A, b, K, options);
+    end
 else
-    [X, info] = IRhybrid_fgmres(A, b, K, options);
+    RegParam  = IRget(options, 'RegParam',  [], 'fast');
+    if strcmp(RegParam, 'wgcv'), options.RegParam = 'gcv'; end
+    if isempty(K)
+        [X, info] = IRhybrid_fgmres(A, b, options);
+    else
+        [X, info] = IRhybrid_fgmres(A, b, K, options);
+    end
 end
