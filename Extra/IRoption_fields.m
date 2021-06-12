@@ -97,6 +97,7 @@ allfields = {'x0';
     'RegParRegRange';
     'discrflatTol';
     'discrbilStopTol';
-    'regbilStopTol'};
+    'regbilStopTol';
+    'solver'};
 
 
