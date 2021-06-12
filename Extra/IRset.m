@@ -286,6 +286,8 @@ switch field
     [validvalue, errmsg] = PosVector2(field,value);
   case {'inSolver'} % character string
     [validvalue, errmsg] = inSolverType(field,value);
+  case {'solver'} % character string
+    [validvalue, errmsg] = SolverType(field,value);
   case {'adaptConstr'} % character string
     [validvalue, errmsg] = adaptConstrType(field,value);
   case {'Ktot'} % vector with all real positive integers
@@ -695,7 +697,18 @@ function [valid, errmsg] = inSolverType(field,value)
 % One of these strings: gmres, lsqr, fgmres
 valid =  (ischar(value) && any(strcmpi(value,{'gmres';'fgmres';'lsqr';'cgls';'rrgmres'})));
 if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''gmres'' or ''fgmres'' or ''lasq'' or ''cgls''.',field);
+  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''gmres'' or ''fgmres'' or ''lsqr'' or ''cgls''.',field);
+else
+  errmsg = '';
+end
+
+%------------------------------------------------------------------------
+
+function [valid, errmsg] = SolverType(field,value)
+% One of these strings: gmres, lsqr, fgmres
+valid =  (ischar(value) && any(strcmpi(value,{'fgmres';'flsqr'})));
+if ~valid
+  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''fgmres'' or ''flsqr''.',field);
 else
   errmsg = '';
 end
