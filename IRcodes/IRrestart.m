@@ -218,7 +218,7 @@ warmrestart= IRget(options, 'warmrestart',[], 'fast');
 SparsTrans = IRget(options, 'SparsityTrans', [], 'fast');
 
 hybrid = (strcmp(inSolver, 'gmres') || strcmp(inSolver, 'fgmres') || strcmp(inSolver, 'lsqr'))...
-    && (strcmp(adaptConstr, 'nn'));
+    && (strcmp(adaptConstr, 'nn') || strcmp(adaptConstr, 'tvnn'));
 
 NoStopIn = strcmp(NoStopIn,'on');
 if strcmp(NoStop,'on')
