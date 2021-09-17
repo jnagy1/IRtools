@@ -41,12 +41,12 @@ function [X, info] = IRhybrid_lsqr(A, b, varargin)
 %                   If 'gcv', 'wgcv' or 'modgcv' is chosen, the iteration is
 %                     stopped when the GCV function minimum stabilizes or
 %                     increases within a certain window of iterations (see
-%                     'stopGCV', 'FlatTol' and 'MinTol').
+%                     'stopGCV', 'GCVflatTol' and 'GCVminTol').
 %                   If 'discrep' is chosen, and NoiseLevel is provided,
 %                     then the discrepancy principle is used as stopping
 %                     (see 'NoiseLevel' and 'eta').
 %      stopGCV    - stopping criterion for the iterations when GCV is used
-%                   [ 'GCVvalues' | {'resflat'} ]
+%                   [ {'GCVvalues'} | 'resflat' ]
 %      resflatTol - tolerace for the stabilization of the residual
 %                   (to be used if stopGCV is 'resflat')
 %                   [ {0.05} | non-negative scalar ]

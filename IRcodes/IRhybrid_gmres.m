@@ -41,16 +41,16 @@ function [X, info] = IRhybrid_gmres(A, b, varargin)
 %                   If 'gcv' or 'modgcv' is chosen, the iteration is stopped
 %                     when the GCV function minimum stabilizes or increases 
 %                     within a certain window of iterations (see 'stopGCV',
-%                     'FlatTol' and 'MinTol').
+%                     'GCVflatTol' and 'GCVminTol').
 %                   If 'discrep' is chosen, and NoiseLevel is
 %                     provided, then the discrepancy principle is used as
 %                     stopping criterion (see 'NoiseLevel' and 'eta').
 %      stopGCV    - stopping criterion for the iterations when GCV is used
-%                   [ 'GCVvalues' | {'resflat'} ]
-%      FlatTol    - tolerance for detecting flatness (stabilization)
+%                   [ {'GCVvalues'} | 'resflat' ]
+%      GCVflatTol - tolerance for detecting flatness (stabilization)
 %                   in the GCV function as a stopping criterion
 %                   [ {10^-6} | non-negative scalar ]
-%      MinTol     - window of iterations: if the GCV minimum continues to
+%      GCVminTol     - window of iterations: if the GCV minimum continues to
 %                   increase over this window, then the iterations are
 %                   stopped:
 %                   [ {3} | positive integer ]
