@@ -25,7 +25,7 @@ NoiseLevel = 0.05;
 bn = PRnoise(b, NoiseLevel);
 
 % Compute a standard CGLS solution.
-K = 1:200;
+K = 1:4;
 options = IRset('x_true', x, 'NoStop', 'on');
 [X1, IterInfo1] = IRcgls(A, bn, K, options);
 
