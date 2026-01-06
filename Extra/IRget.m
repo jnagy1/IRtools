@@ -9,8 +9,7 @@ function val = IRget(options,name,value,flag)
 %   options.  It is sufficient to type only the leading characters that 
 %   uniquely identify the parameter, and case is ignored for parameter names.  
 %   [] is a valid options argument.
-%
-% val = IRget(options,'name',value) 
+%   val = IRget(options,'name',value) 
 %   extracts the named parameter as above, but returns VALUE if the named 
 %   parameter is not specified in options.
 %

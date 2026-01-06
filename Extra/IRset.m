@@ -180,22 +180,18 @@ switch field
     [validvalue, errmsg] = PosInteger(field,value);
   case {'MaxIterIn'} % real positive integer
     [validvalue, errmsg] = PosInteger(field,value);
-  case {'MaxIterOut'} % real positive integer
-    [validvalue, errmsg] = PosInteger(field,value);
-  case {'InProjIt'} % real positive integer
-    [validvalue, errmsg] = PosInteger(field,value);
   case{'TotIterMax'}
     [validvalue, errmsg] = PosInteger2(field, value);
   case{'ktotcount'}
     [validvalue, errmsg] = nonNegInteger2(field, value);
+  case {'MaxIterOut'} % real positive integer
+    [validvalue, errmsg] = PosInteger(field,value);
   case {'x0'} % numeric array, none
     [validvalue, errmsg] = x0type(field,value);
   case {'IterBar'} % off, on
     [validvalue, errmsg] = onOffType(field,value);
   case {'x_true'} % numeric array, off
     [validvalue, errmsg] = x_truetype(field,value);
-  case {'AllX'} %  off, on
-    [validvalue, errmsg] = onOffType(field,value);
   case {'NoStop'} %  off, on
     [validvalue, errmsg] = onOffType(field,value);
   case {'NoStopIn'} %  off, on
@@ -260,18 +256,12 @@ switch field
     [validvalue, errmsg] = PosInteger(field,value);
   case {'resflatTol'}% real non-negative scalar
     [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'jbdTol'}% real non-negative scalar
-    [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'jbdTolx'}% real non-negative scalar
-    [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'regPflatTol'}% real non-negative scalar
+  case {'discrflatTol'}% real non-negative scalar
     [validvalue, errmsg] = nonNegscalar(field,value);
   case {'LSQRtols'}% real non-negative vector of length 2
     [validvalue, errmsg] = nonNeg2vector(field,value);
   case {'RegParam0'}% real non-negative scalar
     [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'RegParamVect0'}% real non-negative scalar
-    [validvalue, errmsg] = nonNegVector(field,value);
   case {'NoiseLevel'}% real non-negative scalar
     [validvalue, errmsg] = NoiseLevelType(field,value);
   case {'eta'}% real non-negative scalar
@@ -286,8 +276,6 @@ switch field
     [validvalue, errmsg] = PosVector2(field,value);
   case {'inSolver'} % character string
     [validvalue, errmsg] = inSolverType(field,value);
-  case {'solver'} % character string
-    [validvalue, errmsg] = SolverType(field,value);
   case {'adaptConstr'} % character string
     [validvalue, errmsg] = adaptConstrType(field,value);
   case {'Ktot'} % vector with all real positive integers
@@ -300,8 +288,8 @@ switch field
     [validvalue, errmsg] = sirtType(field,value);  
   case {'shrink'} % off, on
     [validvalue, errmsg] = onOffType(field,value);
-  case {'stepsize'}% real non-negative scalar
-    [validvalue, errmsg] = stepsizeoption(field,value);
+  case {'stepsize'} % real positive scalar or 'none'
+    [validvalue, errmsg] = positiveScalar2(field,value);
   case {'backtracking'} % off, on
     [validvalue, errmsg] = onOffType(field,value);
   case {'backscalar'}% real non-negative scalar
@@ -318,28 +306,8 @@ switch field
     [validvalue, errmsg] = PosInteger(field,value); 
   case{'warmrestart'} % off, on
     [validvalue, errmsg] = onOffType(field,value);
-  case {'weight0'} % numeric array, none
-    [validvalue, errmsg] = x0type(field,value);
-  case {'svdbasis'} % numeric array, none
-    [validvalue, errmsg] = PosIntegerBound(field,value);
-  case {'qnorm'} % real non-negative scalar
-    [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'dimension'} % real non-negative scalar
-    [validvalue, errmsg] = dimensionsize(field,value);
-  case {'reginskaExp'} 
-    [validvalue, errmsg] = nonNegscalar(field,value);  
-  case {'plotty'} 
-    [validvalue, errmsg] = onOffType(field,value); 
-  case {'RegParamRange'} 
-    [validvalue, errmsg] = nonNegBounds(field,value); 
-  case {'RegParRegRange'} 
-    [validvalue, errmsg] = nonNegBounds(field,value); 
-  case {'discrbilStopTol'}% real non-negative scalar
-    [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'discrflatTol'}
-    [validvalue, errmsg] = nonNegscalar(field,value);
-  case {'regbilStopTol'}% real non-negative scalar
-    [validvalue, errmsg] = nonNegscalar(field,value);
+  case{'ComputeNorms'} % off, on
+    [validvalue, errmsg] = onOffType(field,value);
   otherwise
     %validfield = false;  
     validvalue = false;
@@ -392,17 +360,6 @@ end
 
 %------------------------------------------------------------------------
 
-function [valid, errmsg] = PosIntegerBound(field,value)
-% Any positive real integer
-valid =  isreal(value) && isscalar(value) && (value > 0) && (value < 7) && value == floor(value) ;
-if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be a positive real integer between 1 and 6.',field);
-else
-  errmsg = '';
-end
-
-%------------------------------------------------------------------------
-
 function [valid, errmsg] = PosInteger2(field,value)
 % Any positive real integer
 valid =  (isreal(value) && isscalar(value) && (value > 0) && value == floor(value)) || ... 
@@ -439,9 +396,10 @@ end
 %-----------------------------------------------------------------------
 
 function [valid, errmsg] = SparsityTransType(field,value)
-valid =  ischar(value) && any(strcmpi(value,{'none';'dwt';'dct';'svd';'tv1D';'tv2D'}));
+% One of these strings: on, off
+valid =  ischar(value) && any(strcmp(value,{'none';'dwt';'dct'}));
 if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be ''none'' or ''dwt'' or ''dct'' or ''svd'' or ''tv1D'' or ''tv2D''.',field);
+  errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be ''none'' or ''dwt'' or ''dct''.',field);
 else
   errmsg = '';
 end
@@ -494,7 +452,7 @@ end
 
 function [valid, errmsg] = tikFunType(field,value)
 % One of these strings: none, Identity, Laplacian
-valid =  (ischar(value) && any(strcmpi(value,{'none';'Identity';'Laplacian1D';'Laplacian2D';'Gradient1D';'Gradient2D';'tv';'tv1D';'tv2D'}))) || ...
+valid =  (ischar(value) && any(strcmpi(value,{'none';'Identity';'Laplacian1D';'Laplacian2D';'tv'}))) || ...
          (~ischar(value) && ismatrix(value));
 if ~valid
   errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be ''none'' or ''Identity'' or ''Laplacian1D'' or ''Laplacian2D'' or ''tv'' or a matrix.',field);
@@ -560,7 +518,7 @@ end%--------------------------------------------------------------------------
 
 function [valid, errmsg] = RegPartype(field,value)
 % One of these: real nonnegative scalar, GCV, WGCV, optimal
-valid =  (isreal(value) && isscalar(value) && (value >= 0)) | (ischar(value) && any(strcmpi(value,{'gcv','wgcv','modgcv','optimal','discrep','discrepit','discrepbil','Lcurve','off','none','reginskait','reginskabil'})));
+valid =  (isreal(value) && isscalar(value) && (value >= 0)) | (ischar(value) && any(strcmpi(value,{'gcv','wgcv','modgcv','optimal','discrep','discrepit','off','none'})));
 
 if ~valid
  errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be a non-negative scalar or ''GCV'' or ''WGCV'' or ''discrep'' or ''discrepit'' or ''optimal'' or ''none''.',field);
@@ -636,28 +594,6 @@ end
 
 %------------------------------------------------------------------------
 
-function [valid, errmsg] = nonNegBounds(field,value)
-% Any real non-negative scalar
-valid =  isreal(value) && isvector(value) && sum(value>=0)==length(value) && (length(value)==2) && (value(1)<value(2));
-if ~valid
- errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be a real non-negative vector of length 2, with the first entry smaller than the second entry.',field);
-else
-  errmsg = '';
-end
-
-%------------------------------------------------------------------------
-
-function [valid, errmsg] = nonNegVector(field,value)
-% Any real non-negative scalar
-valid =  isreal(value) && isvector(value) && sum(value>=0)==length(value);
-if ~valid
- errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be a real non-negative vector of length 2.',field);
-else
-  errmsg = '';
-end
-
-%------------------------------------------------------------------------
-
 function [valid, errmsg] = NoiseLevelType(field,value)
 % One of these: real nonnegative scalar, GCV, WGCV, optimal
 valid =  (isreal(value) && isscalar(value) && (value >= 0)) |...
@@ -695,20 +631,9 @@ end
 
 function [valid, errmsg] = inSolverType(field,value)
 % One of these strings: gmres, lsqr, fgmres
-valid =  (ischar(value) && any(strcmpi(value,{'gmres';'fgmres';'lsqr';'cgls';'rrgmres'})));
+valid =  (ischar(value) && any(strcmpi(value,{'gmres';'fgmres';'lsqr';'cgls';'rrgmres';'cmrh';'lslu'})));
 if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''gmres'' or ''fgmres'' or ''lsqr'' or ''cgls''.',field);
-else
-  errmsg = '';
-end
-
-%------------------------------------------------------------------------
-
-function [valid, errmsg] = SolverType(field,value)
-% One of these strings: gmres, lsqr, fgmres
-valid =  (ischar(value) && any(strcmpi(value,{'fgmres';'flsqr'})));
-if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''fgmres'' or ''flsqr''.',field);
+  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''gmres'' or ''fgmres'' or ''lasq'' or ''cgls'' or ''cmrh'' or ''lslu''.',field);
 else
   errmsg = '';
 end
@@ -719,7 +644,7 @@ function [valid, errmsg] = adaptConstrType(field,value)
 % One of these strings: tv, nn
 valid =  (ischar(value) && any(strcmpi(value,{'tv';'nn';'tvnn';'box';'energy';'project';'spnn';'sp';'none'})));
 if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''tv'' or ''nn'' or ''tvnn'' or ''box'' or ''spnn''.',field);
+  errmsg = sprintf('Invalid value for OPTIONS inSolver %s: must be ''tv'' or ''nn'' or ''tvnn'' or ''box'' or ''spnn'' or ''none''.',field);
 else
   errmsg = '';
 end
@@ -756,28 +681,3 @@ if ~valid
 else
   errmsg = '';
 end
-
-%------------------------------------------------------------------------
-
-function [valid, errmsg] = dimensionsize(field,value)
-% Any positive real integer
-valid =  (value == 1 || value == 2);
-if ~valid
-  errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be either 1 or 2 (scalar).',field);
-else
-  errmsg = '';
-end
-
-%------------------------------------------------------------------------
-
-function [valid, errmsg] = stepsizeoption(field,value)
-% Any real non-negative scalar
-valid =  (isreal(value) && isscalar(value) && (value >= 0)) || (ischar(value) && (strcmp(value, 'none') ));
-
-if ~valid
- errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be a real non-negative scalar.',field);
-else
-  errmsg = '';
-end
-
-

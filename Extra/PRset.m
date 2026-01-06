@@ -49,7 +49,7 @@ if (nargin == 0) && (nargout == 0)
   fprintf('                            ''ppower'' | ''dot2'' | ''dotk'' | ''satellite'' | {''hst''} ]\n')
   fprintf('PRblur       PSF          [ array | {''gauss''} | ''defocus'' | ''speckle'' | ''shake'' |\n')
   fprintf('                            ''motion'' | ''rotation'' ]\n')
-  fprintf('PRblur       BlurLevel    [ ''mild'' | {''medium''} | ''severe'' ]\n')
+  fprintf('PRblur       BlurLevel    [ scalar in [0,1] | ''mild'' | {''medium''} | ''severe'' ]\n')
   fprintf('PRblur       BC           [ ''zero'' | ''periodic'' | {''reflective''} ]\n')
   fprintf('PRblur       CommitCrime  [ {''off''} | ''on'' ]\n')
   fprintf('PRdiffusion  Tfinal       [ positive scalar | {0.01} ]\n')
@@ -224,7 +224,7 @@ switch field
     [validvalue, errmsg] = trueImageType(field,value);
   case {'PSF'} % numeric array, various char strings
     [validvalue, errmsg] = psftype(field,value);
-  case {'BlurLevel'} %  mild, medium of severe
+  case {'BlurLevel'} %  scalar, or string (mild, medium or severe)
     [validvalue, errmsg] = BlurLevelType(field,value);
   case {'Frames'} % positive integer
     [validvalue, errmsg] = PosInteger(field,value);
@@ -308,7 +308,7 @@ end
 
 function [valid, errmsg] = BlurLevelType(field,value)
 % One of these strings: mild, medium, severe
-valid =  ischar(value) && any(strcmp(value,{'mild';'medium';'severe'}));
+valid =  isnumeric(value) | (ischar(value) && any(strcmp(value,{'mild';'medium';'severe'})));
 if ~valid
   errmsg = sprintf('Invalid value for OPTIONS parameter %s: must be ''mild'' or ''medium'' or ''severe''.',field);
 else
