@@ -41,7 +41,7 @@ elseif xsize(1) == A1size(2)*B1size(2)
       Bisize = size(Bi);
       tmp = reshape(x(:,j), Bisize(2), Aisize(2));
       tmp = Bi*tmp*(Ai.');
-      y(:,j) = y(:,j) + reshape(tmp, Aisize(2)*Bisize(2), 1);
+      y(:,j) = y(:,j) + reshape(tmp, Aisize(1)*Bisize(1), 1);
     end % end the i loop
    end % end the j loop
 
