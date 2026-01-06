@@ -37,6 +37,9 @@ function [A, b, x, ProbInfo] = PRblurshake(varargin)
 %                 'medium'
 %                 'severe'
 %                 Default is 'medium'
+%                 Can also specify a scalar 0 to 2, where 0 = no blur (A=I),
+%                 1/3 = 'mild', 2/3 = 'medium', and 1 = 'severe'. 
+%                 Choosing a scalar larger than 1 results in very severe blur. 
 %    BC         : Specify boundary condition:
 %                 'zero'
 %                 'periodic'
@@ -76,6 +79,12 @@ function [A, b, x, ProbInfo] = PRblurshake(varargin)
 % Per Christian Hansen, Technical University of Denmark
 % James G. Nagy, Emory University
 % April, 2018.
+
+% Modified December, 2025
+% * Fixed some minor bugs
+% * Fixed scaling of blurs to be consistent for resized images
+% * Added a scalar input for BlurLevel. Scalar can be 0 to 2, where
+%   0 = no blur (A=I), 1/3 = 'mild', 2/3 = 'medium', and 1 = 'severe'.
 
 % This file is part of the IR Tools package and is distributed under the 
 % 3-Clause BSD License. A separate license file should be provided as part 

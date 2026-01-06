@@ -49,6 +49,9 @@ function [A, b, x, ProbInfo] = PRblur(varargin)
 %                 'medium'
 %                 'severe'
 %                 Default is 'medium'
+%                 Can also specify a scalar 0 to 2, where 0 = no blur (A=I),
+%                 1/3 = 'mild', 2/3 = 'medium', and 1 = 'severe'. 
+%                 Choosing a scalar larger than 1 results in very severe blur. 
 %    BC         : Specify boundary condition:
 %                 'zero'
 %                 'periodic'
@@ -87,6 +90,12 @@ function [A, b, x, ProbInfo] = PRblur(varargin)
 % Per Christian Hansen, Technical University of Denmark
 % James G. Nagy, Emory University
 % April, 2018.
+
+% Modified December, 2025
+% * Fixed some minor bugs
+% * Fixed scaling of blurs to be consistent for resized images
+% * Added a scalar input for BlurLevel. Scalar can be 0 to 2, where
+%   0 = no blur (A=I), 1/3 = 'mild', 2/3 = 'medium', and 1 = 'severe'.
 
 % This file is part of the IR Tools package and is distributed under the 
 % 3-Clause BSD License. A separate license file should be provided as part 
@@ -199,17 +208,31 @@ end
 image = padIm(image, nbig);
 
 % Defining the PSF
-if strncmpi(PSF,'rot',3)
+if (isscalar(BlurLevel) && BlurLevel == 0)
+    PSF = zeros(n);
+    center = fix(n/2);
+    PSF(center(1),center(2)) = 1;
+elseif strncmpi(PSF,'rot',3)
     if n(1)~=n(2), error('For rotational blur, the image must be square'), end
     % In the case of rotaional blur, create the sparse blurring matrix.
+    Rot_none   = 0;
+    Rot_mild   = 15;
+    Rot_medium = 45;
+    Rot_severe = 90;
     if strcmpi(BlurLevel,'mild')
-        Rot = 15;
+        Rot = Rot_mild;
     elseif strcmpi(BlurLevel,'medium')
-        Rot = 45;
+        Rot = Rot_medium;
     elseif strcmpi(BlurLevel,'severe')
-        Rot = 90;
+        Rot = Rot_severe;
+    elseif (isscalar(BlurLevel) && BlurLevel >=0 && BlurLevel <= 2)
+        Rot = pchip([0,1/3,2/3,1],[Rot_none,Rot_mild,Rot_medium,Rot_severe],BlurLevel);
     else
-        error('Invalid Blur Level')
+        if isscalar(BlurLevel)
+            error('Invalid Blur Level: It does not make sense to set Blur Level > 2 or < 0')
+        else
+            error('Invalid Blur Level')
+        end
     end
     RotStep = 1;
     
@@ -230,13 +253,18 @@ else
 end
 
 %
+
 if strcmpi(CommitCrime, 'on')
     % If we commit crime, then we define the blurring matrix considering
     % the boundary conditions given by the user; in this case: Ax = b
     x = image(:);
     imsize = size(image);
     % Defining the blurring matrix.
-    if strncmpi(PSF,'rot',3)
+    if (isscalar(BlurLevel) && BlurLevel == 0)
+        A = speye(prod(n));
+        x = image(:);
+        warning('Blur level set to 0 returns A as a sparse identity matrix, and b = x')
+    elseif strncmpi(PSF,'rot',3)
         A = rotBlur(Rot,RotStep,size(image,1),BC);
     else
         A = psfMatrix(PSF, BC, center, imsize);
@@ -246,7 +274,10 @@ else
     % If we don't commit crime, then we define a blurring matrix considering
     % zero boundary conditions; this matrix multiplies the enlarged or padded
     % image; in this case: Ax ~= b
-    if strncmpi(PSF,'rot',3)
+    if (isscalar(BlurLevel) && BlurLevel == 0)
+        b = image;
+        warning('Blur level set to 0 returns A as a sparse identity matrix, and b = x')
+    elseif strncmpi(PSF,'rot',3)
         A = rotBlur(Rot,RotStep,size(image,1),'zero');
         b = A*image(:);
         nb = sqrt(length(b));
@@ -256,14 +287,17 @@ else
         b = A*image;
     end
     % Cutting the exact test image, and the blurred image.
-    image = image(getidx(1):getidx(1)+n-1,getidx(2):getidx(2)+n-1);
-    b = b(getidx(1):getidx(1)+n-1,getidx(2):getidx(2)+n-1);
+    image = image(getidx(1):getidx(1)+n(1)-1,getidx(2):getidx(2)+n(1)-1);
+    b = b(getidx(1):getidx(1)+n(2)-1,getidx(2):getidx(2)+n(2)-1);
     x = image(:);
     % Rescale x and b, in case the maximum was outside the border.
     b = b/max(x(:));
     x = x/max(x(:));
     % Define the blurring matrix with the BC specified by the user.
-    if strncmpi(PSF,'rot',3)
+    if (isscalar(BlurLevel) && BlurLevel == 0)
+        A = speye(prod(n));
+        b = b(:);
+    elseif strncmpi(PSF,'rot',3)
         A = rotBlur(Rot,RotStep,size(image,1),BC);
         b = A*image(:);
     else
@@ -279,7 +313,7 @@ ProbInfo.xSize = n;
 ProbInfo.bType = 'image2D';
 ProbInfo.bSize = n;
 ProbInfo.psf = PSF;
-if isa(A, 'psfMatrix')
+if (isa(A, 'psfMatrix') || (isscalar(BlurLevel) && BlurLevel==0))
     ProbInfo.psfCenter = center;
 end
 
@@ -290,58 +324,123 @@ function [PSF, center] = PSFget(psfKind,n,BlurLevel)
 % Generate the PSF with a user-defined level of blurring.
 if strcmpi(psfKind,'gauss')
     % "qualitative" level of blurring
+    ynone   = 0;
+    ymild   = 2;
+    ymedium = 4;
+    ysevere = 6;
+    ymax    = 24;
     if strcmpi(BlurLevel,'mild')
         y = 2;
     elseif strcmpi(BlurLevel,'medium')
         y = 4;
     elseif strcmpi(BlurLevel,'severe')
         y = 6;
+    elseif (isscalar(BlurLevel) && BlurLevel >=0 && BlurLevel <= 2)
+        y = pchip([0,1/3,2/3,1,2],[ynone,ymild,ymedium,ysevere,ymax],BlurLevel);
     else
-        error('Invalid Blur Level')
+        if isscalar(BlurLevel)
+            error('Invalid Blur Level: It does not make sense to set Blur Level > 2 or < 0')
+        else
+            error('Invalid Blur Level')
+        end
     end
     [PSF, center] = psfGauss(n, y);
+        
 elseif strcmpi(psfKind,'defocus')
+    n256 = [256,256];
+    Rnone   = 0;
+    Rmild   = min(fix((n256+1)/32) - 1);
+    Rmedium = min(fix((n256+1)/16) - 1);
+    Rsevere = min(fix((n256+1)/8) - 1);
+    Rmax    = min(fix((n256+1)/2) - 1);
     if strcmpi(BlurLevel,'mild')
-        R = min(fix((n+1)/32) - 1);
+        R = Rmild;
     elseif strcmpi(BlurLevel,'medium')
-        R = min(fix((n+1)/16) - 1);
+        R = Rmedium;
     elseif strcmpi(BlurLevel,'severe')
-        R = min(fix((n+1)/8) - 1);
+        R = Rsevere;
+    elseif (isscalar(BlurLevel) && BlurLevel >=0 && BlurLevel <=2)
+        R = pchip([0,1/3,2/3,1,2],[Rnone,Rmild,Rmedium,Rsevere,Rmax],BlurLevel);
     else
-        error('Invalid Blur Level')
+        if isscalar(BlurLevel)
+            error('Invalid Blur Level: It does not make sense to set Blur Level > 2 or < 0')
+        else
+            error('Invalid Blur Level')
+        end
     end
     [PSF, center] = psfDefocus(n, R);
 elseif strcmpi(psfKind,'speckle')
     % "qualitative" level of blurring
+    Cn2none   = 0;
+    Cn2mild   = 3.4765e-18;
+    Cn2medium = 2.16941e-17;
+    Cn2severe = 8.90505e-17;
+    Cn2max    = 2e-16;
     if strcmpi(BlurLevel,'mild')
-        Cn2 = 3.4765e-18;
+        Cn2 = Cn2mild;
     elseif strcmpi(BlurLevel,'medium')
-        Cn2 = 2.16941e-17;
+        Cn2 = Cn2medium;
     elseif strcmpi(BlurLevel,'severe')
-        Cn2 = 8.90505e-17;
+        Cn2 = Cn2severe;
+    elseif (isscalar(BlurLevel) && BlurLevel >=0 && BlurLevel <=2)
+        Cn2 = pchip([0,1/3,2/3,1,2],[Cn2none,Cn2mild,Cn2medium,Cn2severe,Cn2max],BlurLevel);
     else
-        error('Invalid Blur Level')
+        if isscalar(BlurLevel)
+            error('Invalid Blur Level: It does not make sense to set Blur Level > 2 or < 0')
+        else
+            error('Invalid Blur Level')
+        end
     end
     [PSF, center] = psfSpeckle(n, Cn2);
 elseif strcmpi(psfKind,'motion')
+    Lnone   = 1;
+    Lmild   = 5;
+    Lmedium = 10;
+    Lsevere = 200;
+    Lmax    = 400;
     if strcmpi(BlurLevel,'mild')
-        L = 5;
+        L = Lmild;
     elseif strcmpi(BlurLevel,'medium')
-        L = 10;
+        L = Lmedium;
     elseif strcmpi(BlurLevel,'severe')
-        %L = 20;
-        L = 50;
+        L = Lsevere;
+    elseif (isscalar(BlurLevel) && BlurLevel >=0 && BlurLevel <= 2)
+        L = pchip([0,1/3,2/3,1,2],[Lnone,Lmild,Lmedium,Lsevere,Lmax],BlurLevel);
     else
-        error('Invalid Blur Level')
+        if isscalar(BlurLevel)
+            error('Invalid Blur Level: It does not make sense to set Blur Level > 2 or < 0')
+        else
+            error('Invalid Blur Level')
+        end
     end
     [PSF, center] = psfMotion(n, L);
 elseif strcmpi(psfKind,'shake')
-    [PSF, center] = psfShake(n, BlurLevel);
+    BLVnone   = 0;
+    BLVmild   = 0.25;
+    BLVmedium = 0.5;
+    BLVsevere = 0.75;
+    BLVmax    = 1;
+    if strcmpi(BlurLevel,'mild')
+        BLV = BLVmild;
+    elseif strcmpi(BlurLevel,'medium')
+        BLV = BLVmedium;
+    elseif strcmpi(BlurLevel,'severe')
+        BLV = BLVsevere;
+    elseif (isscalar(BlurLevel) && BlurLevel >=0 && BlurLevel <= 2)
+        BLV = pchip([0,1/3,2/3,1,2],[BLVnone,BLVmild,BLVmedium,BLVsevere,BLVmax],BlurLevel);
+    else
+        if isscalar(BlurLevel)
+            error('Invalid Blur Level: It does not make sense to set Blur Level > 2 or < 0')
+        else
+            error('Invalid Blur Level')
+        end
+    end
+    [PSF, center] = psfShake(n, BLV);
 else
     error('Invalid input type for psf')
 end
 
-function [PSF, center] = psfGauss(imsize, y, center)
+function [PSF, center] = psfGauss(imsize, y)
 %
 %  Create a Gaussian PSF, with specified center, from parameters
 %  in the vector y, and having dimension imsize.  The Gaussian
@@ -350,17 +449,15 @@ function [PSF, center] = psfGauss(imsize, y, center)
 %  where C is a 2-by-2 covariance matrix, with entries
 %      C = [y(1)^2 y(3)^2; y(3)^2 y(2)^2]
 %
-%  If center is not specified, assume it is 
-%      fix(m/2, n/2)
-%
 %  If size(y) == 1, then y(1) = y(2), and y(3) = 0
 %  If size(y) == 2, then y(3) = 0.
 %
 
+imsize_out = imsize;
+imsize = [256, 256];
 m = imsize(1); n = imsize(2); 
-if nargin < 3
-  center = fix([m,n]/2);
-end
+
+center = fix([m,n]/2);
 if length(y) == 1
   y = [y; y; 0];
 end
@@ -384,8 +481,11 @@ J = J - center(2);
   
 PSF = exp(-(a*(I.^2) + 2*c*(I.*J) + b*(J.^2))/2);
 PSF = PSF/(2*pi*sqrt(d));
+PSF = psfResize(PSF, imsize_out);
+center = fix(imsize_out/2);
+PSF = PSF/sum(PSF(:));
 %
-function [PSF, center] = psfDefocus(dim, R)
+function [PSF, center] = psfDefocus(imsize, R)
 %PSFDEFOCUS Array with point spread function for out-of-focus blur.
 %
 %function [PSF, center] = psfDefocus(dim, R)
@@ -415,20 +515,10 @@ function [PSF, center] = psfDefocus(dim, R)
 %            SIAM, Philadelphia, 2006.
 % Last revised April 25, 2007.
 
-%
-% Check inputs and set default parameters.
-%
-if (nargin < 1)
-   error('dim  must be given.')
-end
-l = length(dim);
-if l == 1
-  m = dim;
-  n = dim;
-else
-  m = dim(1);
-  n = dim(2);
-end
+imsize_out = imsize;
+imsize = [256, 256];
+m = imsize(1); n = imsize(2);
+
 center = fix(([m,n]+1)/2);
 if (nargin < 2)
    R = min(center - 1);
@@ -448,6 +538,8 @@ elseif R <= min(center - 1)
 else
     error('Blurring parameter R too big. It should be R <= min(center - 1)')
 end
+PSF = psfResize(PSF, imsize_out);
+center = fix(imsize_out/2);
 PSF = PSF / sum(PSF(:));
 
 %
@@ -455,7 +547,9 @@ function [PSF, center] = psfMotion(imsize, L)
 %
 % Create a PSF for linear motion blur of length L and dimension imsize.
 
-m = imsize(1); n = imsize(2); 
+imsize_out = imsize;
+imsize = [256, 256];
+m = imsize(1); n = imsize(2);
 center = fix([m,n]/2);
 % Modify L if the image is small.
 L = min([L, min( m-center(1)+1 , n-center(2)+1 )]);
@@ -463,6 +557,52 @@ d = linspace(1,0,L);
 P = diag(d) + 0.5*diag(d(1:end-1),1);
 PSF = zeros(m,n);
 PSF(center(1)+(0:L-1),center(2)+(0:L-1)) = P;
+PSF = psfResize(PSF, imsize_out);
+center = fix(imsize_out/2);
+PSF = PSF / sum(PSF(:));
+
+function PSFout = psfResize(PSFin, nout)
+% Resize PSF from size m x n to size p x q 
+% Input:  PSFin  - PSF of size m x n
+%         nout   - desired number of rows and columns in PSFout
+%        
+% Output: PSFout - resized PSF
+
+[m, n] = size(PSFin);
+if size(nout) == 1
+    p = nout;
+    q = nout;
+else
+    p = nout(1);
+    q = nout(2);
+end
+
+% Create normalized coordinate grid for output image
+[xq, yq] = meshgrid(1:q, 1:p);
+
+% Map coordinates to original image space
+xq = (xq - 1) * (n - 1) / (q - 1) + 1;
+yq = (yq - 1) * (m - 1) / (p - 1) + 1;
+
+% Find the integer pixel positions (top-left corner)
+x1 = floor(xq);
+y1 = floor(yq);
+
+% Clip to valid range
+x1 = max(1, min(n-1, x1));
+y1 = max(1, min(m-1, y1));
+x2 = x1 + 1;
+y2 = y1 + 1;
+
+% Compute interpolation weights
+wx = xq - x1;
+wy = yq - y1;
+
+% Perform bilinear interpolation
+PSFout = (1 - wy).*(1 - wx).*PSFin(sub2ind([m, n], y1, x1)) + ...
+         (1 - wy).*(wx).*PSFin(sub2ind([m, n], y1, x2)) + ...
+         (wy).*(1 - wx).*PSFin(sub2ind([m, n], y2, x1)) + ...
+         (wy).*(wx).*PSFin(sub2ind([m, n], y2, x2));
 
 function I = PatternTestImage1(n)
 %
@@ -732,6 +872,9 @@ if length(imsize) > 1
 else 
     n = imsize;
 end
+imsize_out = imsize;
+imsize = [256, 256];
+n = imsize(2);
 
 % We'll assume the aperture diameter (in number of pixels) is half the
 % size of the image size.  So if we have a 256-by-256 image, we'll use
@@ -759,7 +902,9 @@ phase = phase_layers{1};
 
 PSF_shifted = abs( ifft2(scaled_pupil_mask.*exp(sqrt(-1)*phase)) ).^2;
 PSF = fftshift(PSF_shifted);
-center = [fix(n/2), fix(n/2)];
+PSF = psfResize(PSF, imsize_out);
+center = fix(imsize_out/2);
+PSF = PSF / sum(PSF(:));
 
 %=======================================
 
@@ -1009,14 +1154,16 @@ else
   P = (r0 <= r) & (r <= r1);
 end
 
-function [PSF, center] = psfShake(nvec, BlurLevel)
+    function [PSF, center] = psfShake(imsize, BlurLevelVal)
 % We assume square images, but the code below should work for rectangular
 % images if we ever want to change.
-m = nvec(1); n = nvec(2);
+imsize_out = imsize;
+imsize = [256, 256];
+m = imsize(1); n = imsize(2);
 center = round([m, n]/2);
 PointSource = zeros(m, n);
 PointSource(center(1), center(2)) = 1;
-if isa(BlurLevel,'numeric') && BlurLevel == 0
+if BlurLevelVal == 0
     PSF = PointSource;
     return
 end
@@ -1025,24 +1172,24 @@ xdata = 0:0.25:1;
 ydata = [100 50 25 12.5 6.25];
 sfun = polyfit(xdata, ydata, 4);
 
-if ~isa(BlurLevel, 'numeric')
-    switch BlurLevel
-        case 'mild'
-            BlurLevelVal = 0.25; % mild blur
-        case 'medium'
-            BlurLevelVal = 0.5;  % medium blur
-        case 'severe'
-            BlurLevelVal = 0.75; % severe blur
-        otherwise
-            error('incorrect BlurLevel')
-    end
-else
-    if 0 <= BlurLevel && BlurLevel <= 1
-        BlurLevelVal = BlurLevel;
-    else
-        error('Incorrect value for BlurLevel')
-    end
-end
+% if ~isa(BlurLevel, 'numeric')
+%     switch BlurLevel
+%         case 'mild'
+%             BlurLevelVal = 0.25; % mild blur
+%         case 'medium'
+%             BlurLevelVal = 0.5;  % medium blur
+%         case 'severe'
+%             BlurLevelVal = 0.75; % severe blur
+%         otherwise
+%             error('incorrect BlurLevel')
+%     end
+% else
+%     if 0 <= BlurLevel && BlurLevel <= 1
+%         BlurLevelVal = BlurLevel;
+%     else
+%         error('Incorrect value for BlurLevel')
+%     end
+% end
 shift_scale = polyval(sfun, BlurLevelVal);
 n_shifts = 10;   % Generate random points for the camera path
 n_frames = 100;  % Fit the path points with a spline, and evaluate at
@@ -1068,6 +1215,9 @@ dtheta = zeros(size(dx));
 %  is used for the case where rotation is included.
 T = MotionBlurTransform(m/2, n/2, n_frames+1, dx, dy, dtheta(:));
 PSF = ApplyMotionTransform(T, m, n, PointSource);
+PSF = psfResize(PSF, imsize_out);
+center = fix(imsize_out/2);
+PSF = PSF / sum(PSF(:));
 
 %
 % --------------------
